@@ -1,0 +1,41 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Training Library</title>
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="bg-shape"></div>
+  <header class="top">
+    <h1>Training Library</h1>
+    <div class="top-actions">
+      <span id="pythonStatus" class="runtime-status"></span>
+      <input id="email" placeholder="user@email.com" />
+      <button id="reload">Обновить</button>
+      <button id="adminBtn">Admin</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel" id="courses"></aside>
+    <section class="panel" id="content"></section>
+  </main>
+
+  <dialog id="loginModal">
+    <h3>Admin login</h3>
+    <input id="loginUser" placeholder="username" value="admin" />
+    <input id="loginPass" placeholder="password" type="password" value="admin" />
+    <div class="row">
+      <button id="loginSubmit">Войти</button>
+      <button onclick="loginModal.close()">Отмена</button>
+    </div>
+    <p id="loginMsg"></p>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
