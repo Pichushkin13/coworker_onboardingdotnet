@@ -13,7 +13,9 @@
     <h1>Training Library</h1>
     <div class="top-actions">
       <span id="pythonStatus" class="runtime-status"></span>
-      <input id="email" placeholder="user@email.com" />
+      <span id="authStatus" class="runtime-status"></span>
+      <button id="authBtn">Войти</button>
+      <button id="logoutBtn" class="hidden">Выйти</button>
       <button id="reload">Обновить</button>
       <button id="adminBtn">Admin</button>
     </div>
@@ -33,6 +35,22 @@
       <button onclick="loginModal.close()">Отмена</button>
     </div>
     <p id="loginMsg"></p>
+  </dialog>
+
+  <dialog id="authModal">
+    <h3>Вход в Training Library</h3>
+    <div class="grid-2">
+      <input id="authEmail" placeholder="email" />
+      <input id="authName" placeholder="display name" />
+    </div>
+    <input id="authPass" placeholder="password" type="password" />
+    <div class="row">
+      <button id="authLogin">Войти</button>
+      <button id="authRegister">Регистрация</button>
+      <button id="authWindows">Windows</button>
+      <button onclick="authModal.close()">Отмена</button>
+    </div>
+    <p id="authMsg"></p>
   </dialog>
 
   <script src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js"></script>

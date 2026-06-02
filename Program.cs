@@ -3,19 +3,27 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.Data.Sqlite;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate();
+builder.Services.AddAuthorization();
 var app = builder.Build();
 
 var dbPath = Path.Combine(app.Environment.ContentRootPath, "training.db");
 var sessions = new ConcurrentDictionary<string, AdminSession>();
+var userSessions = new ConcurrentDictionary<string, UserSession>();
 const int sessionTtlSeconds = 6 * 60 * 60;
+const int userSessionTtlSeconds = 14 * 24 * 60 * 60;
 
 InitDb();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapGet("/api/app-data", (HttpRequest request) =>
 {
@@ -35,17 +43,44 @@ app.MapGet("/api/app-data", (HttpRequest request) =>
         new() { ["$userEmail"] = userEmail })).ToList();
     var attemptSessions = Rows(conn, "SELECT * FROM assessmentAttemptSessions WHERE userEmail=$userEmail",
         new() { ["$userEmail"] = userEmail });
+    var drafts = Rows(conn, "SELECT moduleId,activityId,answerJson,updatedAt FROM answerDrafts WHERE userEmail=$userEmail",
+        new() { ["$userEmail"] = userEmail }).Select(d => new Dictionary<string, object?>
+        {
+            ["moduleId"] = ObjString(d, "moduleId"),
+            ["activityId"] = ObjString(d, "activityId"),
+            ["answer"] = ParseJsonObject(ObjString(d, "answerJson", "{}")),
+            ["updatedAt"] = ObjString(d, "updatedAt")
+        }).ToList();
 
     return Results.Json(new Dictionary<string, object?>
     {
         ["version"] = "migrated-dotnet-v1",
         ["userEmail"] = userEmail,
+        ["authUser"] = CurrentAuthUser(request),
         ["courses"] = courses,
         ["modules"] = modules,
         ["activities"] = activities,
         ["sqlSchemas"] = sqlSchemas,
-        ["assessmentProgress"] = BuildAssessmentProgress(modules, attempts, overrides, attemptSessions)
+        ["assessmentProgress"] = BuildAssessmentProgress(modules, attempts, overrides, attemptSessions),
+        ["drafts"] = drafts
     });
+});
+
+app.MapGet("/api/auth/windows", async (HttpContext context) =>
+{
+    var auth = await context.AuthenticateAsync(NegotiateDefaults.AuthenticationScheme);
+    if (!auth.Succeeded || auth.Principal?.Identity?.IsAuthenticated != true)
+    {
+        await context.ChallengeAsync(NegotiateDefaults.AuthenticationScheme);
+        return;
+    }
+
+    var windowsName = auth.Principal.Identity?.Name ?? "";
+    var email = WindowsEmail(windowsName);
+    using var conn = OpenDb();
+    EnsureUser(conn, email, windowsName, "windows");
+    var token = CreateUserSession(email, windowsName, "windows");
+    await Results.Json(new { token, email, displayName = windowsName, authType = "windows" }).ExecuteAsync(context);
 });
 
 app.MapPost("/api/{**rest}", async (string rest, HttpRequest request) =>
@@ -64,6 +99,65 @@ app.MapPost("/api/{**rest}", async (string rest, HttpRequest request) =>
     try
     {
         var path = "/api/" + rest;
+
+        if (path == "/api/auth/register")
+        {
+            var email = NormalizeEmail(Required(payload, "email", "Email"));
+            var displayName = S(payload, "displayName", email).Trim();
+            var password = Required(payload, "password", "Password");
+            if (password.Length < 6) throw new AppError("Password must contain at least 6 characters.");
+            if (Rows(conn, "SELECT 1 FROM appUsers WHERE email=$email", new() { ["$email"] = email }).Any())
+                throw new AppError("User already exists.");
+            Exec(conn,
+                "INSERT INTO appUsers(email,displayName,passwordHash,authType,status,createdAt,lastLoginAt) VALUES($email,$displayName,$passwordHash,'password','active',$createdAt,'')",
+                new() { ["$email"] = email, ["$displayName"] = displayName, ["$passwordHash"] = HashPassword(password), ["$createdAt"] = NowIso() });
+            var token = CreateUserSession(email, displayName, "password");
+            return Results.Json(new { token, email, displayName, authType = "password" });
+        }
+
+        if (path == "/api/auth/login")
+        {
+            var email = NormalizeEmail(Required(payload, "email", "Email"));
+            var password = Required(payload, "password", "Password");
+            var user = Rows(conn, "SELECT * FROM appUsers WHERE email=$email AND status='active'", new() { ["$email"] = email }).FirstOrDefault();
+            if (user is null || !VerifyPassword(password, ObjString(user, "passwordHash")))
+                throw new AppError("Invalid email or password.");
+            Exec(conn, "UPDATE appUsers SET lastLoginAt=$lastLoginAt WHERE email=$email", new() { ["$lastLoginAt"] = NowIso(), ["$email"] = email });
+            var token = CreateUserSession(email, ObjString(user, "displayName", email), ObjString(user, "authType", "password"));
+            return Results.Json(new { token, email, displayName = ObjString(user, "displayName", email), authType = ObjString(user, "authType", "password") });
+        }
+
+        if (path == "/api/auth/logout")
+        {
+            var token = BearerToken(request);
+            if (token.Length > 0) userSessions.TryRemove(token, out _);
+            return Results.Json(new { status = "ok" });
+        }
+
+        if (path == "/api/draft/save")
+        {
+            var userEmail = UserEmail(request);
+            if (CurrentUserSession(request) is null) throw new AppError("Sign in to save drafts.");
+            var moduleId = Required(payload, "moduleId", "Module ID");
+            var activityId = Required(payload, "activityId", "Activity ID");
+            var answerJson = (payload["answer"] ?? new JsonObject()).ToJsonString();
+            Exec(conn,
+                """
+                INSERT INTO answerDrafts(userEmail,moduleId,activityId,answerJson,updatedAt)
+                VALUES($userEmail,$moduleId,$activityId,$answerJson,$updatedAt)
+                ON CONFLICT(userEmail,moduleId,activityId) DO UPDATE SET answerJson=$answerJson, updatedAt=$updatedAt
+                """,
+                new() { ["$userEmail"] = userEmail, ["$moduleId"] = moduleId, ["$activityId"] = activityId, ["$answerJson"] = answerJson, ["$updatedAt"] = NowIso() });
+            return Results.Json(new { status = "ok" });
+        }
+
+        if (path == "/api/draft/clear-module")
+        {
+            var userEmail = UserEmail(request);
+            var moduleId = Required(payload, "moduleId", "Module ID");
+            Exec(conn, "DELETE FROM answerDrafts WHERE userEmail=$userEmail AND moduleId=$moduleId", new() { ["$userEmail"] = userEmail, ["$moduleId"] = moduleId });
+            return Results.Json(new { status = "ok" });
+        }
 
         if (path == "/api/admin/login")
         {
@@ -314,8 +408,10 @@ app.MapPost("/api/{**rest}", async (string rest, HttpRequest request) =>
             var taskResults = expired && S(payload, "submissionReason") != "time_expired"
                 ? new JsonArray()
                 : payload["taskResults"] as JsonArray ?? new JsonArray();
-            var result = CompleteAssessmentAttempt(conn, module, tasks, userEmail, attempts.Count + 1, taskResults, reason, session, maxAttempts);
-            return Results.Json(result);
+                var result = CompleteAssessmentAttempt(conn, module, tasks, userEmail, attempts.Count + 1, taskResults, reason, session, maxAttempts);
+                Exec(conn, "DELETE FROM answerDrafts WHERE userEmail=$userEmail AND moduleId=$moduleId",
+                    new() { ["$userEmail"] = userEmail, ["$moduleId"] = ObjString(module, "moduleId") });
+                return Results.Json(result);
         }
 
         if (path == "/api/learning-event")
@@ -485,6 +581,23 @@ CREATE TABLE IF NOT EXISTS adminUsers (
   status TEXT,
   createdAt TEXT
 );
+CREATE TABLE IF NOT EXISTS appUsers (
+  email TEXT PRIMARY KEY,
+  displayName TEXT,
+  passwordHash TEXT,
+  authType TEXT,
+  status TEXT,
+  createdAt TEXT,
+  lastLoginAt TEXT
+);
+CREATE TABLE IF NOT EXISTS answerDrafts (
+  userEmail TEXT,
+  moduleId TEXT,
+  activityId TEXT,
+  answerJson TEXT,
+  updatedAt TEXT,
+  PRIMARY KEY(userEmail,moduleId,activityId)
+);
 """);
     if (!Rows(conn, "SELECT username FROM adminUsers WHERE username='admin'").Any())
     {
@@ -538,7 +651,95 @@ string NowIso() => DateTimeOffset.UtcNow.ToString("O");
 
 string UserEmail(HttpRequest request) => request.Headers["X-User-Email"].FirstOrDefault() is { Length: > 0 } email
     ? email
+    : CurrentUserSession(request)?.Email is { Length: > 0 } sessionEmail
+    ? sessionEmail
     : "demo.user@example.com";
+
+UserSession? CurrentUserSession(HttpRequest request)
+{
+    var token = BearerToken(request);
+    if (token.Length == 0 || !userSessions.TryGetValue(token, out var session)) return null;
+    if (session.Expires < DateTimeOffset.UtcNow)
+    {
+        userSessions.TryRemove(token, out _);
+        return null;
+    }
+    return session;
+}
+
+Dictionary<string, object?>? CurrentAuthUser(HttpRequest request)
+{
+    var session = CurrentUserSession(request);
+    if (session is null) return null;
+    return new()
+    {
+        ["email"] = session.Email,
+        ["displayName"] = session.DisplayName,
+        ["authType"] = session.AuthType,
+        ["expiresAt"] = session.Expires.ToString("O")
+    };
+}
+
+string BearerToken(HttpRequest request)
+{
+    var value = request.Headers.Authorization.FirstOrDefault() ?? "";
+    const string prefix = "Bearer ";
+    return value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? value[prefix.Length..].Trim() : "";
+}
+
+string CreateUserSession(string email, string displayName, string authType)
+{
+    var token = Token();
+    userSessions[token] = new UserSession(email, displayName, authType, DateTimeOffset.UtcNow.AddSeconds(userSessionTtlSeconds));
+    return token;
+}
+
+string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+
+string HashPassword(string password)
+{
+    var salt = RandomNumberGenerator.GetBytes(16);
+    var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, 100_000, HashAlgorithmName.SHA256, 32);
+    return $"pbkdf2$100000${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+}
+
+bool VerifyPassword(string password, string stored)
+{
+    var parts = stored.Split('$');
+    if (parts.Length != 4 || parts[0] != "pbkdf2") return false;
+    var iterations = int.Parse(parts[1]);
+    var salt = Convert.FromBase64String(parts[2]);
+    var expected = Convert.FromBase64String(parts[3]);
+    var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, expected.Length);
+    return CryptographicOperations.FixedTimeEquals(actual, expected);
+}
+
+void EnsureUser(SqliteConnection conn, string email, string displayName, string authType)
+{
+    if (Rows(conn, "SELECT 1 FROM appUsers WHERE email=$email", new() { ["$email"] = email }).Any())
+    {
+        Exec(conn, "UPDATE appUsers SET displayName=$displayName,lastLoginAt=$lastLoginAt WHERE email=$email",
+            new() { ["$displayName"] = displayName, ["$lastLoginAt"] = NowIso(), ["$email"] = email });
+        return;
+    }
+    Exec(conn,
+        "INSERT INTO appUsers(email,displayName,passwordHash,authType,status,createdAt,lastLoginAt) VALUES($email,$displayName,'',$authType,'active',$createdAt,$lastLoginAt)",
+        new() { ["$email"] = email, ["$displayName"] = displayName, ["$authType"] = authType, ["$createdAt"] = NowIso(), ["$lastLoginAt"] = NowIso() });
+}
+
+string WindowsEmail(string windowsName)
+{
+    var name = windowsName.Trim();
+    if (name.Contains('@')) return NormalizeEmail(name);
+    var user = name.Split('\\', '/').LastOrDefault() ?? name;
+    return NormalizeEmail($"{user}@windows.local");
+}
+
+object? ParseJsonObject(string json)
+{
+    try { return JsonNode.Parse(json); }
+    catch { return new JsonObject(); }
+}
 
 bool Truthy(object? value)
 {
@@ -884,6 +1085,7 @@ Dictionary<string, object?> ParamDict(Dictionary<string, object?> values) =>
     values.ToDictionary(x => "$" + x.Key, x => x.Value);
 
 record AdminSession(string Username, DateTimeOffset Expires);
+record UserSession(string Email, string DisplayName, string AuthType, DateTimeOffset Expires);
 
 class AppError(string message) : Exception(message);
 

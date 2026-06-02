@@ -10,7 +10,10 @@ let state = {
   richTextEditors: {},
   countdownId: null,
   timedSubmitStarted: false,
-  pythonPreload: "idle"
+  pythonPreload: "idle",
+  authToken: localStorage.getItem("authToken") || "",
+  authUser: parseJson(localStorage.getItem("authUser"), null),
+  draftTimers: {}
 };
 
 let SQL = null;
@@ -18,16 +21,13 @@ let PYODIDE = null;
 let pyodidePromise = null;
 
 const $ = (id) => document.getElementById(id);
-const emailInput = $("email");
-emailInput.value = localStorage.getItem("userEmail") || "demo.user@example.com";
 
 async function api(path, method = "GET", body) {
+  const headers = { "Content-Type": "application/json" };
+  if (state.authToken) headers.Authorization = `Bearer ${state.authToken}`;
   const res = await fetch(path, {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      "X-User-Email": emailInput.value.trim() || "demo.user@example.com"
-    },
+    headers,
     body: body ? JSON.stringify(body) : undefined
   });
   const payload = await res.json();
@@ -124,6 +124,11 @@ function normalize(payload) {
   payload.activities = payload.activities || [];
   payload.sqlSchemas = payload.sqlSchemas || [];
   payload.assessmentProgress = payload.assessmentProgress || [];
+  payload.drafts = payload.drafts || [];
+  if (payload.authUser) {
+    state.authUser = payload.authUser;
+    localStorage.setItem("authUser", JSON.stringify(payload.authUser));
+  }
   payload.activities.forEach((a) => {
     a.config = parseJson(a.configJson, {});
     a.validation = parseJson(a.validationJson, {});
@@ -143,12 +148,52 @@ function findActivity(id) {
   return state.data.activities.find((a) => a.activityId === id);
 }
 
+function getDraft(activityId) {
+  return (state.data?.drafts || []).find((d) => d.activityId === activityId)?.answer || null;
+}
+
+function setDraftLocal(moduleId, activityId, answer) {
+  state.data.drafts = (state.data.drafts || []).filter((d) => d.activityId !== activityId);
+  state.data.drafts.push({ moduleId, activityId, answer, updatedAt: new Date().toISOString() });
+}
+
+function saveDraft(moduleId, activityId, answer) {
+  if (!state.authToken) return;
+  setDraftLocal(moduleId, activityId, answer);
+  clearTimeout(state.draftTimers[activityId]);
+  state.draftTimers[activityId] = setTimeout(() => {
+    api("/api/draft/save", "POST", { moduleId, activityId, answer }).catch((e) => console.warn("Draft save failed", e));
+  }, 500);
+}
+
+function collectDraftAnswer(activity) {
+  if (activity.activityType === "quiz") {
+    const answers = {};
+    (activity.config.questions || []).forEach((q, i) => {
+      answers[i] = [...document.querySelectorAll(`[name="q_${css(activity.activityId)}_${i}"]:checked`)].map((n) => Number(n.value)).sort();
+    });
+    return { type: "quiz", answers };
+  }
+  if (activity.activityType === "open_answer") {
+    return { type: "open_answer", text: $(`open_${activity.activityId}`)?.value || "" };
+  }
+  if (activity.activityType === "sql_task") {
+    const runtime = state.sqlRuntime[activity.activityId];
+    return {
+      type: "sql_task",
+      query: $(`sql_${activity.activityId}`)?.value || "",
+      rows: runtime?.normalized?.rows || [],
+      validationStatus: runtime?.validationStatus || ""
+    };
+  }
+  return {};
+}
+
 function getProgress(moduleId) {
   return state.data.assessmentProgress.find((p) => p.moduleId === moduleId);
 }
 
 async function load() {
-  localStorage.setItem("userEmail", emailInput.value);
   stopCountdown();
   state.data = normalize(await api("/api/app-data"));
   warmPythonRuntime();
@@ -167,9 +212,18 @@ async function load() {
 function render() {
   renderSidebar();
   renderMain();
+  renderAuth();
   $("adminBtn").textContent = state.adminToken ? `Admin: ${state.adminUser}` : "Admin";
   renderPythonStatus();
   initAdminSorting();
+}
+
+function renderAuth() {
+  const user = state.authUser;
+  $("authStatus").textContent = user ? (user.displayName || user.email) : "Guest";
+  $("authStatus").className = `runtime-status ${user ? "ready" : ""}`;
+  $("authBtn").classList.toggle("hidden", Boolean(user));
+  $("logoutBtn").classList.toggle("hidden", !user);
 }
 
 function renderSidebar() {
@@ -232,6 +286,7 @@ function renderMain() {
     </section>
   `;
   initInteractiveActivities();
+  applyDrafts(module.moduleId);
 }
 
 function renderActivityList(module, tasks, assessment) {
@@ -501,7 +556,46 @@ function sanitizeRichHtml(html) {
 function initInteractiveActivities() {
   document.querySelectorAll(".activity-unit").forEach((container) => initMappingDrag(container));
   document.querySelectorAll(".order-list").forEach((list) => initOrderDrag(list));
+  initDraftListeners();
   refreshOrderNumbers();
+}
+
+function initDraftListeners() {
+  if (!state.authToken) return;
+  activities(state.selectedModule).forEach((activity) => {
+    if (activity.activityType === "quiz") {
+      document.querySelectorAll(`[name^="q_${css(activity.activityId)}_"]`).forEach((input) => {
+        input.onchange = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+      });
+    } else if (activity.activityType === "open_answer") {
+      const input = $(`open_${activity.activityId}`);
+      if (input) input.oninput = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+    } else if (activity.activityType === "sql_task") {
+      const input = $(`sql_${activity.activityId}`);
+      if (input) input.oninput = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+    }
+  });
+}
+
+function applyDrafts(moduleId) {
+  if (!state.authToken) return;
+  activities(moduleId).forEach((activity) => {
+    const draft = getDraft(activity.activityId);
+    if (!draft) return;
+    if (activity.activityType === "quiz" && draft.answers) {
+      Object.entries(draft.answers).forEach(([index, values]) => {
+        document.querySelectorAll(`[name="q_${css(activity.activityId)}_${index}"]`).forEach((input) => {
+          input.checked = (values || []).includes(Number(input.value));
+        });
+      });
+    } else if (activity.activityType === "open_answer") {
+      const input = $(`open_${activity.activityId}`);
+      if (input && draft.text) input.value = draft.text;
+    } else if (activity.activityType === "sql_task") {
+      const input = $(`sql_${activity.activityId}`);
+      if (input && draft.query) input.value = draft.query;
+    }
+  });
 }
 
 function initMappingDrag(container) {
@@ -672,6 +766,7 @@ async function runSql(id) {
       interpreterOutput: "",
       validationStatus: validateSql(a, normalized) ? "passed" : "failed"
     };
+    saveDraft(a.moduleId, a.activityId, collectDraftAnswer(a));
     db.close();
   } catch (e) {
     error.innerHTML = `<div class="result error">Interpreter error: ${esc(e.message)}</div>`;
@@ -682,6 +777,7 @@ async function runSql(id) {
       validationStatus: "not_checked",
       normalized: { columns: [], rows: [] }
     };
+    saveDraft(a.moduleId, a.activityId, collectDraftAnswer(a));
   }
 }
 
@@ -922,6 +1018,7 @@ async function submitAssessment(moduleId, autoExpired) {
       submissionReason: autoExpired ? "time_expired" : "manual"
     });
     showResult("assessment_result", `${autoExpired ? "Time is over. " : ""}Submitted. Attempt ${response.attemptNo} / ${response.effectiveMaxAttempts}. Status: ${response.resultStatus}.`, "ok");
+    if (state.authToken) await api("/api/draft/clear-module", "POST", { moduleId }).catch(() => {});
     state.timedSubmitStarted = false;
     await load();
   } catch (e) {
@@ -1435,6 +1532,62 @@ function selectModule(id) {
 }
 
 $("reload").onclick = () => load().catch((e) => alert(e.message));
+$("authBtn").onclick = () => {
+  $("authMsg").textContent = "";
+  $("authEmail").value = state.authUser?.email || "";
+  $("authName").value = state.authUser?.displayName || "";
+  $("authPass").value = "";
+  $("authModal").showModal();
+};
+$("logoutBtn").onclick = async () => {
+  await api("/api/auth/logout", "POST", {}).catch(() => {});
+  state.authToken = "";
+  state.authUser = null;
+  localStorage.removeItem("authToken");
+  localStorage.removeItem("authUser");
+  await load();
+};
+$("authLogin").onclick = async () => {
+  try {
+    const response = await api("/api/auth/login", "POST", { email: $("authEmail").value, password: $("authPass").value });
+    state.authToken = response.token;
+    state.authUser = response;
+    localStorage.setItem("authToken", response.token);
+    localStorage.setItem("authUser", JSON.stringify(response));
+    $("authModal").close();
+    await load();
+  } catch (e) {
+    $("authMsg").textContent = e.message;
+  }
+};
+$("authRegister").onclick = async () => {
+  try {
+    const response = await api("/api/auth/register", "POST", { email: $("authEmail").value, displayName: $("authName").value, password: $("authPass").value });
+    state.authToken = response.token;
+    state.authUser = response;
+    localStorage.setItem("authToken", response.token);
+    localStorage.setItem("authUser", JSON.stringify(response));
+    $("authModal").close();
+    await load();
+  } catch (e) {
+    $("authMsg").textContent = e.message;
+  }
+};
+$("authWindows").onclick = async () => {
+  try {
+    const res = await fetch("/api/auth/windows", { credentials: "include" });
+    const payload = await res.json();
+    if (!res.ok) throw new Error(payload.error || "Windows authentication is not available.");
+    state.authToken = payload.token;
+    state.authUser = payload;
+    localStorage.setItem("authToken", payload.token);
+    localStorage.setItem("authUser", JSON.stringify(payload));
+    $("authModal").close();
+    await load();
+  } catch (e) {
+    $("authMsg").textContent = "Windows authentication is unavailable in this browser/server context. Use email registration or login.";
+  }
+};
 $("adminBtn").onclick = async () => {
   if (state.adminToken) {
     state.adminToken = "";

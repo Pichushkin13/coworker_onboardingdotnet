@@ -36,6 +36,10 @@ button {
 
 .bg-shape { display: none; }
 
+.hidden {
+  display: none !important;
+}
+
 .top {
   max-width: 1360px;
   margin: 0 auto;
@@ -833,6 +837,22 @@ dialog {
   max-height: 92vh;
   overflow: auto;
   box-shadow: var(--shadow);
+}
+
+dialog .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+dialog > input {
+  width: 100%;
+  border: 1px solid #cfd9d1;
+  border-radius: 8px;
+  padding: 9px;
+  background: #fff;
+  margin-top: 10px;
 }
 
 .modal-head {
