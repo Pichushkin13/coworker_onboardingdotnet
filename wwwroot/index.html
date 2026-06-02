@@ -14,10 +14,8 @@
     <div class="top-actions">
       <span id="pythonStatus" class="runtime-status"></span>
       <span id="authStatus" class="runtime-status"></span>
-      <button id="authBtn">Войти</button>
-      <button id="logoutBtn" class="hidden">Выйти</button>
+      <button id="authBtn">Аккаунт</button>
       <button id="reload">Обновить</button>
-      <button id="adminBtn">Admin</button>
     </div>
   </header>
 
@@ -38,9 +36,10 @@
   </dialog>
 
   <dialog id="authModal">
-    <h3>Вход в Training Library</h3>
+    <h3>Аккаунт Training Library</h3>
+    <div id="authCurrent"></div>
     <div class="grid-2">
-      <input id="authEmail" placeholder="email" />
+      <input id="authEmail" placeholder="email или admin" />
       <input id="authName" placeholder="display name" />
     </div>
     <input id="authPass" placeholder="password" type="password" />
@@ -48,6 +47,7 @@
       <button id="authLogin">Войти</button>
       <button id="authRegister">Регистрация</button>
       <button id="authWindows">Windows</button>
+      <button id="authLogout" class="hidden">Выйти</button>
       <button onclick="authModal.close()">Отмена</button>
     </div>
     <p id="authMsg"></p>

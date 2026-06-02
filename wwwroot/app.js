@@ -2,8 +2,8 @@ let state = {
   data: null,
   selectedCourse: "",
   selectedModule: "",
-  adminToken: "",
-  adminUser: "",
+  adminToken: localStorage.getItem("adminToken") || "",
+  adminUser: localStorage.getItem("adminUser") || "",
   sqlRuntime: {},
   pythonRuntime: {},
   dragItem: null,
@@ -213,17 +213,15 @@ function render() {
   renderSidebar();
   renderMain();
   renderAuth();
-  $("adminBtn").textContent = state.adminToken ? `Admin: ${state.adminUser}` : "Admin";
   renderPythonStatus();
   initAdminSorting();
 }
 
 function renderAuth() {
   const user = state.authUser;
-  $("authStatus").textContent = user ? (user.displayName || user.email) : "Guest";
+  $("authStatus").textContent = user ? `${user.role === "admin" ? "Admin: " : ""}${user.displayName || user.email}` : "Guest";
   $("authStatus").className = `runtime-status ${user ? "ready" : ""}`;
-  $("authBtn").classList.toggle("hidden", Boolean(user));
-  $("logoutBtn").classList.toggle("hidden", !user);
+  $("authBtn").textContent = user ? "Аккаунт" : "Войти";
 }
 
 function renderSidebar() {
@@ -1534,26 +1532,56 @@ function selectModule(id) {
 $("reload").onclick = () => load().catch((e) => alert(e.message));
 $("authBtn").onclick = () => {
   $("authMsg").textContent = "";
+  $("authCurrent").innerHTML = state.authUser
+    ? `<div class="result ok">Signed in as ${esc(state.authUser.displayName || state.authUser.email)}${state.authUser.role === "admin" ? " (admin)" : ""}</div>`
+    : "<div class='muted'>Sign in, register a new user, or try Windows authentication.</div>";
   $("authEmail").value = state.authUser?.email || "";
   $("authName").value = state.authUser?.displayName || "";
   $("authPass").value = "";
+  $("authLogout").classList.toggle("hidden", !state.authUser);
+  $("authLogin").classList.toggle("hidden", Boolean(state.authUser));
+  $("authRegister").classList.toggle("hidden", Boolean(state.authUser));
+  $("authWindows").classList.toggle("hidden", Boolean(state.authUser));
   $("authModal").showModal();
 };
-$("logoutBtn").onclick = async () => {
+
+function setSignedIn(response) {
+  state.authToken = response.token;
+  state.authUser = response;
+  state.adminToken = response.adminToken || "";
+  state.adminUser = response.role === "admin" ? (response.displayName || response.email) : "";
+  localStorage.setItem("authToken", response.token);
+  localStorage.setItem("authUser", JSON.stringify(response));
+  if (state.adminToken) {
+    localStorage.setItem("adminToken", state.adminToken);
+    localStorage.setItem("adminUser", state.adminUser);
+  } else {
+    localStorage.removeItem("adminToken");
+    localStorage.removeItem("adminUser");
+  }
+}
+
+async function signOut() {
   await api("/api/auth/logout", "POST", {}).catch(() => {});
   state.authToken = "";
   state.authUser = null;
+  state.adminToken = "";
+  state.adminUser = "";
   localStorage.removeItem("authToken");
   localStorage.removeItem("authUser");
+  localStorage.removeItem("adminToken");
+  localStorage.removeItem("adminUser");
   await load();
+}
+
+$("authLogout").onclick = async () => {
+  await signOut();
+  $("authModal").close();
 };
 $("authLogin").onclick = async () => {
   try {
     const response = await api("/api/auth/login", "POST", { email: $("authEmail").value, password: $("authPass").value });
-    state.authToken = response.token;
-    state.authUser = response;
-    localStorage.setItem("authToken", response.token);
-    localStorage.setItem("authUser", JSON.stringify(response));
+    setSignedIn(response);
     $("authModal").close();
     await load();
   } catch (e) {
@@ -1563,10 +1591,7 @@ $("authLogin").onclick = async () => {
 $("authRegister").onclick = async () => {
   try {
     const response = await api("/api/auth/register", "POST", { email: $("authEmail").value, displayName: $("authName").value, password: $("authPass").value });
-    state.authToken = response.token;
-    state.authUser = response;
-    localStorage.setItem("authToken", response.token);
-    localStorage.setItem("authUser", JSON.stringify(response));
+    setSignedIn(response);
     $("authModal").close();
     await load();
   } catch (e) {
@@ -1578,24 +1603,12 @@ $("authWindows").onclick = async () => {
     const res = await fetch("/api/auth/windows", { credentials: "include" });
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.error || "Windows authentication is not available.");
-    state.authToken = payload.token;
-    state.authUser = payload;
-    localStorage.setItem("authToken", payload.token);
-    localStorage.setItem("authUser", JSON.stringify(payload));
+    setSignedIn(payload);
     $("authModal").close();
     await load();
   } catch (e) {
     $("authMsg").textContent = "Windows authentication is unavailable in this browser/server context. Use email registration or login.";
   }
-};
-$("adminBtn").onclick = async () => {
-  if (state.adminToken) {
-    state.adminToken = "";
-    state.adminUser = "";
-    render();
-    return;
-  }
-  $("loginModal").showModal();
 };
 $("loginSubmit").onclick = async () => {
   try {

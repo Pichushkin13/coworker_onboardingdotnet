@@ -109,22 +109,29 @@ app.MapPost("/api/{**rest}", async (string rest, HttpRequest request) =>
             if (Rows(conn, "SELECT 1 FROM appUsers WHERE email=$email", new() { ["$email"] = email }).Any())
                 throw new AppError("User already exists.");
             Exec(conn,
-                "INSERT INTO appUsers(email,displayName,passwordHash,authType,status,createdAt,lastLoginAt) VALUES($email,$displayName,$passwordHash,'password','active',$createdAt,'')",
+                "INSERT INTO appUsers(email,displayName,passwordHash,authType,role,status,createdAt,lastLoginAt) VALUES($email,$displayName,$passwordHash,'password','student','active',$createdAt,'')",
                 new() { ["$email"] = email, ["$displayName"] = displayName, ["$passwordHash"] = HashPassword(password), ["$createdAt"] = NowIso() });
-            var token = CreateUserSession(email, displayName, "password");
-            return Results.Json(new { token, email, displayName, authType = "password" });
+            var token = CreateUserSession(email, displayName, "password", "student");
+            return Results.Json(new { token, email, displayName, authType = "password", role = "student", adminToken = "" });
         }
 
         if (path == "/api/auth/login")
         {
-            var email = NormalizeEmail(Required(payload, "email", "Email"));
+            var email = ResolveLoginId(Required(payload, "email", "Email or username"));
             var password = Required(payload, "password", "Password");
             var user = Rows(conn, "SELECT * FROM appUsers WHERE email=$email AND status='active'", new() { ["$email"] = email }).FirstOrDefault();
             if (user is null || !VerifyPassword(password, ObjString(user, "passwordHash")))
                 throw new AppError("Invalid email or password.");
             Exec(conn, "UPDATE appUsers SET lastLoginAt=$lastLoginAt WHERE email=$email", new() { ["$lastLoginAt"] = NowIso(), ["$email"] = email });
-            var token = CreateUserSession(email, ObjString(user, "displayName", email), ObjString(user, "authType", "password"));
-            return Results.Json(new { token, email, displayName = ObjString(user, "displayName", email), authType = ObjString(user, "authType", "password") });
+            var role = ObjString(user, "role", "student");
+            var token = CreateUserSession(email, ObjString(user, "displayName", email), ObjString(user, "authType", "password"), role);
+            var adminToken = "";
+            if (role == "admin")
+            {
+                adminToken = Token();
+                sessions[adminToken] = new AdminSession(ObjString(user, "displayName", email), DateTimeOffset.UtcNow.AddSeconds(sessionTtlSeconds));
+            }
+            return Results.Json(new { token, email, displayName = ObjString(user, "displayName", email), authType = ObjString(user, "authType", "password"), role, adminToken });
         }
 
         if (path == "/api/auth/logout")
@@ -586,6 +593,7 @@ CREATE TABLE IF NOT EXISTS appUsers (
   displayName TEXT,
   passwordHash TEXT,
   authType TEXT,
+  role TEXT DEFAULT 'student',
   status TEXT,
   createdAt TEXT,
   lastLoginAt TEXT
@@ -603,6 +611,17 @@ CREATE TABLE IF NOT EXISTS answerDrafts (
     {
         Exec(conn, "INSERT INTO adminUsers(username,password,role,status,createdAt) VALUES('admin','admin','admin','active',$createdAt)",
             new() { ["$createdAt"] = NowIso() });
+    }
+    AddColumnIfMissing(conn, "appUsers", "role", "TEXT DEFAULT 'student'");
+    if (!Rows(conn, "SELECT 1 FROM appUsers WHERE email='admin@example.local'").Any())
+    {
+        Exec(conn,
+            "INSERT INTO appUsers(email,displayName,passwordHash,authType,role,status,createdAt,lastLoginAt) VALUES('admin@example.local','Admin',$passwordHash,'password','admin','active',$createdAt,'')",
+            new() { ["$passwordHash"] = HashPassword("admin"), ["$createdAt"] = NowIso() });
+    }
+    else
+    {
+        Exec(conn, "UPDATE appUsers SET role='admin', status='active' WHERE email='admin@example.local'");
     }
 }
 
@@ -631,6 +650,12 @@ void Exec(SqliteConnection conn, string sql, Dictionary<string, object?>? parame
     cmd.CommandText = sql;
     AddParams(cmd, parameters);
     cmd.ExecuteNonQuery();
+}
+
+void AddColumnIfMissing(SqliteConnection conn, string table, string column, string definition)
+{
+    var existing = Rows(conn, $"PRAGMA table_info({table})").Any(r => ObjString(r, "name").Equals(column, StringComparison.OrdinalIgnoreCase));
+    if (!existing) Exec(conn, $"ALTER TABLE {table} ADD COLUMN {column} {definition}");
 }
 
 void AddParams(SqliteCommand cmd, Dictionary<string, object?>? parameters)
@@ -676,6 +701,7 @@ Dictionary<string, object?>? CurrentAuthUser(HttpRequest request)
         ["email"] = session.Email,
         ["displayName"] = session.DisplayName,
         ["authType"] = session.AuthType,
+        ["role"] = session.Role,
         ["expiresAt"] = session.Expires.ToString("O")
     };
 }
@@ -687,14 +713,21 @@ string BearerToken(HttpRequest request)
     return value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? value[prefix.Length..].Trim() : "";
 }
 
-string CreateUserSession(string email, string displayName, string authType)
+string CreateUserSession(string email, string displayName, string authType, string role = "student")
 {
     var token = Token();
-    userSessions[token] = new UserSession(email, displayName, authType, DateTimeOffset.UtcNow.AddSeconds(userSessionTtlSeconds));
+    userSessions[token] = new UserSession(email, displayName, authType, role, DateTimeOffset.UtcNow.AddSeconds(userSessionTtlSeconds));
     return token;
 }
 
 string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+
+string ResolveLoginId(string value)
+{
+    var login = value.Trim();
+    if (login.Equals("admin", StringComparison.OrdinalIgnoreCase)) return "admin@example.local";
+    return NormalizeEmail(login);
+}
 
 string HashPassword(string password)
 {
@@ -723,7 +756,7 @@ void EnsureUser(SqliteConnection conn, string email, string displayName, string 
         return;
     }
     Exec(conn,
-        "INSERT INTO appUsers(email,displayName,passwordHash,authType,status,createdAt,lastLoginAt) VALUES($email,$displayName,'',$authType,'active',$createdAt,$lastLoginAt)",
+        "INSERT INTO appUsers(email,displayName,passwordHash,authType,role,status,createdAt,lastLoginAt) VALUES($email,$displayName,'',$authType,'student','active',$createdAt,$lastLoginAt)",
         new() { ["$email"] = email, ["$displayName"] = displayName, ["$authType"] = authType, ["$createdAt"] = NowIso(), ["$lastLoginAt"] = NowIso() });
 }
 
@@ -1085,7 +1118,7 @@ Dictionary<string, object?> ParamDict(Dictionary<string, object?> values) =>
     values.ToDictionary(x => "$" + x.Key, x => x.Value);
 
 record AdminSession(string Username, DateTimeOffset Expires);
-record UserSession(string Email, string DisplayName, string AuthType, DateTimeOffset Expires);
+record UserSession(string Email, string DisplayName, string AuthType, string Role, DateTimeOffset Expires);
 
 class AppError(string message) : Exception(message);
 
