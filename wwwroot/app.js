@@ -194,8 +194,18 @@ function getProgress(moduleId) {
 }
 
 async function load() {
+  if (!state.authToken) {
+    showAuthGate();
+    return;
+  }
   stopCountdown();
   state.data = normalize(await api("/api/app-data"));
+  if (!state.data.authUser) {
+    clearSignedIn();
+    showAuthGate("Сессия истекла. Войдите снова.");
+    return;
+  }
+  showAppShell();
   warmPythonRuntime();
   const courses = state.data.courses.filter(isActive).sort(byOrder);
   if (!courses.length) {
@@ -215,6 +225,19 @@ function render() {
   renderAuth();
   renderPythonStatus();
   initAdminSorting();
+}
+
+function showAuthGate(message = "") {
+  $("authGate").classList.remove("hidden");
+  $("appHeader").classList.add("hidden");
+  $("appShell").classList.add("hidden");
+  $("gateMsg").textContent = message;
+}
+
+function showAppShell() {
+  $("authGate").classList.add("hidden");
+  $("appHeader").classList.remove("hidden");
+  $("appShell").classList.remove("hidden");
 }
 
 function renderAuth() {
@@ -1529,22 +1552,6 @@ function selectModule(id) {
   render();
 }
 
-$("reload").onclick = () => load().catch((e) => alert(e.message));
-$("authBtn").onclick = () => {
-  $("authMsg").textContent = "";
-  $("authCurrent").innerHTML = state.authUser
-    ? `<div class="result ok">Signed in as ${esc(state.authUser.displayName || state.authUser.email)}${state.authUser.role === "admin" ? " (admin)" : ""}</div>`
-    : "<div class='muted'>Sign in, register a new user, or try Windows authentication.</div>";
-  $("authEmail").value = state.authUser?.email || "";
-  $("authName").value = state.authUser?.displayName || "";
-  $("authPass").value = "";
-  $("authLogout").classList.toggle("hidden", !state.authUser);
-  $("authLogin").classList.toggle("hidden", Boolean(state.authUser));
-  $("authRegister").classList.toggle("hidden", Boolean(state.authUser));
-  $("authWindows").classList.toggle("hidden", Boolean(state.authUser));
-  $("authModal").showModal();
-};
-
 function setSignedIn(response) {
   state.authToken = response.token;
   state.authUser = response;
@@ -1561,8 +1568,7 @@ function setSignedIn(response) {
   }
 }
 
-async function signOut() {
-  await api("/api/auth/logout", "POST", {}).catch(() => {});
+function clearSignedIn() {
   state.authToken = "";
   state.authUser = null;
   state.adminToken = "";
@@ -1571,58 +1577,61 @@ async function signOut() {
   localStorage.removeItem("authUser");
   localStorage.removeItem("adminToken");
   localStorage.removeItem("adminUser");
-  await load();
 }
 
-$("authLogout").onclick = async () => {
-  await signOut();
-  $("authModal").close();
-};
-$("authLogin").onclick = async () => {
+async function signOut() {
+  await api("/api/auth/logout", "POST", {}).catch(() => {});
+  clearSignedIn();
+  state.data = null;
+  $("courses").innerHTML = "";
+  $("content").innerHTML = "";
+  showAuthGate();
+}
+
+async function loginFromGate() {
   try {
-    const response = await api("/api/auth/login", "POST", { email: $("authEmail").value, password: $("authPass").value });
+    $("gateMsg").textContent = "";
+    const response = await api("/api/auth/login", "POST", { email: $("gateEmail").value, password: $("gatePass").value });
     setSignedIn(response);
-    $("authModal").close();
     await load();
   } catch (e) {
-    $("authMsg").textContent = e.message;
+    $("gateMsg").textContent = e.message;
   }
-};
-$("authRegister").onclick = async () => {
+}
+
+async function registerFromGate() {
   try {
-    const response = await api("/api/auth/register", "POST", { email: $("authEmail").value, displayName: $("authName").value, password: $("authPass").value });
+    $("gateMsg").textContent = "";
+    const response = await api("/api/auth/register", "POST", { email: $("gateEmail").value, displayName: $("gateName").value, password: $("gatePass").value });
     setSignedIn(response);
-    $("authModal").close();
     await load();
   } catch (e) {
-    $("authMsg").textContent = e.message;
+    $("gateMsg").textContent = e.message;
   }
-};
-$("authWindows").onclick = async () => {
+}
+
+async function windowsLoginFromGate() {
   try {
+    $("gateMsg").textContent = "";
     const res = await fetch("/api/auth/windows", { credentials: "include" });
     const payload = await res.json();
     if (!res.ok) throw new Error(payload.error || "Windows authentication is not available.");
     setSignedIn(payload);
-    $("authModal").close();
     await load();
   } catch (e) {
-    $("authMsg").textContent = "Windows authentication is unavailable in this browser/server context. Use email registration or login.";
+    $("gateMsg").textContent = "Windows authentication is unavailable here. Use email/password.";
   }
-};
-$("loginSubmit").onclick = async () => {
-  try {
-    const response = await api("/api/admin/login", "POST", { username: $("loginUser").value, password: $("loginPass").value });
-    state.adminToken = response.token;
-    state.adminUser = response.username;
-    $("loginMsg").textContent = "";
-    $("loginModal").close();
-    render();
-  } catch (e) {
-    $("loginMsg").textContent = e.message;
-  }
-};
+}
+
+$("authBtn").onclick = () => signOut();
+$("gateLogin").onclick = () => loginFromGate();
+$("gateRegister").onclick = () => registerFromGate();
+$("gateWindows").onclick = () => windowsLoginFromGate();
+$("gatePass").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") loginFromGate();
+});
 
 load().catch((e) => {
-  $("content").innerHTML = `<div class="result error">Load error: ${esc(e.message)}</div>`;
+  clearSignedIn();
+  showAuthGate(`Load error: ${e.message}`);
 });
