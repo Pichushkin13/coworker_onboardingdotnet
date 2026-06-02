@@ -77,6 +77,29 @@ app.MapPost("/api/{**rest}", async (string rest, HttpRequest request) =>
     {
         var path = "/api/" + rest;
 
+        if (path == "/api/auth/register")
+        {
+            var email = ResolveLoginId(Required(payload, "email", "Email or username"));
+            var password = Required(payload, "password", "Password");
+            if (email == "admin@example.local") throw new AppError("This login is reserved.");
+            if (password.Length < 6) throw new AppError("Password must contain at least 6 characters.");
+            if (Rows(conn, "SELECT 1 FROM appUsers WHERE email=$email", new() { ["$email"] = email }).Any())
+                throw new AppError("User already exists.");
+            var displayName = DisplayNameFromLogin(email);
+            Exec(conn,
+                "INSERT INTO appUsers(email,displayName,passwordHash,authType,role,status,createdAt,lastLoginAt) VALUES($email,$displayName,$passwordHash,'password','student','active',$createdAt,$lastLoginAt)",
+                new()
+                {
+                    ["$email"] = email,
+                    ["$displayName"] = displayName,
+                    ["$passwordHash"] = HashPassword(password),
+                    ["$createdAt"] = NowIso(),
+                    ["$lastLoginAt"] = NowIso()
+                });
+            var token = CreateUserSession(email, displayName, "password", "student");
+            return Results.Json(new { token, email, displayName, authType = "password", role = "student", adminToken = "" });
+        }
+
         if (path == "/api/auth/login")
         {
             var email = ResolveLoginId(Required(payload, "email", "Email or username"));
@@ -689,6 +712,12 @@ string ResolveLoginId(string value)
     var login = value.Trim();
     if (login.Equals("admin", StringComparison.OrdinalIgnoreCase)) return "admin@example.local";
     return NormalizeEmail(login);
+}
+
+string DisplayNameFromLogin(string login)
+{
+    var name = login.Split('@')[0].Replace('.', ' ').Replace('_', ' ').Replace('-', ' ').Trim();
+    return string.IsNullOrWhiteSpace(name) ? login : name;
 }
 
 string HashPassword(string password)

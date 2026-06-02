@@ -13,7 +13,8 @@ let state = {
   pythonPreload: "idle",
   authToken: localStorage.getItem("authToken") || "",
   authUser: parseJson(localStorage.getItem("authUser"), null),
-  draftTimers: {}
+  draftTimers: {},
+  authMode: "login"
 };
 
 let SQL = null;
@@ -235,6 +236,7 @@ function showAuthGate(message = "") {
   $("appHeader").classList.add("hidden");
   $("appShell").classList.add("hidden");
   $("gateMsg").textContent = message;
+  renderAuthGateMode();
 }
 
 function showAppShell() {
@@ -1597,7 +1599,8 @@ async function signOut() {
 async function loginFromGate() {
   try {
     $("gateMsg").textContent = "";
-    const response = await api("/api/auth/login", "POST", { email: $("gateEmail").value, password: $("gatePass").value });
+    const endpoint = state.authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+    const response = await api(endpoint, "POST", { email: $("gateEmail").value, password: $("gatePass").value });
     setSignedIn(response);
     await load();
   } catch (e) {
@@ -1605,8 +1608,20 @@ async function loginFromGate() {
   }
 }
 
+function renderAuthGateMode() {
+  const isRegister = state.authMode === "register";
+  $("gateLogin").textContent = isRegister ? "Создать аккаунт" : "Войти";
+  $("gateMode").textContent = isRegister ? "Уже есть аккаунт? Войти" : "Создать аккаунт";
+  $("gatePass").autocomplete = isRegister ? "new-password" : "current-password";
+}
+
 $("authBtn").onclick = () => signOut();
 $("gateLogin").onclick = () => loginFromGate();
+$("gateMode").onclick = () => {
+  state.authMode = state.authMode === "register" ? "login" : "register";
+  $("gateMsg").textContent = "";
+  renderAuthGateMode();
+};
 $("gatePass").addEventListener("keydown", (event) => {
   if (event.key === "Enter") loginFromGate();
 });
