@@ -1,7 +1,7 @@
 let state = {
   data: null,
-  selectedCourse: "",
-  selectedModule: "",
+  selectedCourse: localStorage.getItem("selectedCourse") || "",
+  selectedModule: localStorage.getItem("selectedModule") || "",
   adminToken: localStorage.getItem("adminToken") || "",
   adminUser: localStorage.getItem("adminUser") || "",
   sqlRuntime: {},
@@ -14,7 +14,9 @@ let state = {
   authToken: localStorage.getItem("authToken") || "",
   authUser: parseJson(localStorage.getItem("authUser"), null),
   draftTimers: {},
-  authMode: "login"
+  authMode: "login",
+  restoreScrollPending: true,
+  scrollTimer: null
 };
 
 let SQL = null;
@@ -194,6 +196,26 @@ function getProgress(moduleId) {
   return state.data.assessmentProgress.find((p) => p.moduleId === moduleId);
 }
 
+function saveNavigationState() {
+  if (state.selectedCourse) localStorage.setItem("selectedCourse", state.selectedCourse);
+  if (state.selectedModule) localStorage.setItem("selectedModule", state.selectedModule);
+}
+
+function saveScrollPosition() {
+  if (!state.authToken) return;
+  clearTimeout(state.scrollTimer);
+  state.scrollTimer = setTimeout(() => {
+    localStorage.setItem("scrollY", String(Math.max(0, window.scrollY || document.documentElement.scrollTop || 0)));
+  }, 120);
+}
+
+function restoreScrollOnce() {
+  if (!state.restoreScrollPending) return;
+  state.restoreScrollPending = false;
+  const y = Number(localStorage.getItem("scrollY") || 0);
+  if (y > 0) requestAnimationFrame(() => setTimeout(() => window.scrollTo({ top: y, left: 0, behavior: "auto" }), 0));
+}
+
 async function load() {
   if (!state.authToken) {
     showAuthGate();
@@ -217,7 +239,9 @@ async function load() {
   if (!courses.some((c) => c.courseId === state.selectedCourse)) state.selectedCourse = courses[0].courseId;
   const ms = modules();
   if (!ms.some((m) => m.moduleId === state.selectedModule)) state.selectedModule = ms[0]?.moduleId || "";
+  saveNavigationState();
   render();
+  restoreScrollOnce();
 }
 
 function render() {
@@ -1552,11 +1576,13 @@ async function saveOrder(type, orderedIds) {
 function selectCourse(id) {
   state.selectedCourse = id;
   state.selectedModule = modules()[0]?.moduleId || "";
+  saveNavigationState();
   render();
 }
 
 function selectModule(id) {
   state.selectedModule = id;
+  saveNavigationState();
   render();
 }
 
@@ -1625,6 +1651,7 @@ $("gateMode").onclick = () => {
 $("gatePass").addEventListener("keydown", (event) => {
   if (event.key === "Enter") loginFromGate();
 });
+window.addEventListener("scroll", saveScrollPosition, { passive: true });
 
 load().catch((e) => {
   clearSignedIn();
