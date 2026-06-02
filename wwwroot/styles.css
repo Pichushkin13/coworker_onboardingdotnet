@@ -45,25 +45,60 @@ button {
   display: grid;
   place-items: center;
   padding: 24px;
+  background:
+    linear-gradient(135deg, rgba(104, 185, 46, .10), transparent 34%),
+    linear-gradient(315deg, rgba(29, 37, 40, .08), transparent 38%),
+    var(--bg);
 }
 
 .auth-card {
-  width: min(460px, 100%);
+  width: min(430px, 100%);
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: var(--shadow);
-  padding: 24px;
+  padding: 28px;
 }
 
 .auth-card h1 {
-  margin: 0 0 8px;
-  font-size: 28px;
+  margin: 14px 0 6px;
+  font-size: 30px;
+  letter-spacing: 0;
 }
 
 .auth-card p {
   color: var(--muted);
   line-height: 1.5;
+  margin: 0 0 18px;
+}
+
+.training-logo {
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+  background: #151b18;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 18px rgba(18, 23, 21, .16);
+}
+
+.training-logo span {
+  font-weight: 800;
+  font-size: 20px;
+}
+
+.auth-card label {
+  display: block;
+  color: #435048;
+  font-size: 13px;
+  font-weight: 800;
+  margin-top: 12px;
+}
+
+.auth-card label span {
+  display: block;
+  margin-bottom: 5px;
 }
 
 .auth-card input {
@@ -72,18 +107,15 @@ button {
   border-radius: 8px;
   padding: 11px 12px;
   background: #fff;
-  margin-top: 10px;
 }
 
 .auth-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 8px;
-  margin-top: 12px;
+  margin-top: 16px;
 }
 
 .auth-actions button {
-  padding: 10px 12px;
+  width: 100%;
+  padding: 12px 14px;
   border-radius: 8px;
   background: var(--green);
   color: #fff;

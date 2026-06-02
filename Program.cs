@@ -3,13 +3,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.Data.Sqlite;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate();
-builder.Services.AddAuthorization();
 var app = builder.Build();
 
 var dbPath = Path.Combine(app.Environment.ContentRootPath, "training.db");
@@ -22,8 +18,6 @@ InitDb();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
-app.UseAuthentication();
-app.UseAuthorization();
 
 app.MapGet("/api/app-data", (HttpRequest request) =>
 {
@@ -66,23 +60,6 @@ app.MapGet("/api/app-data", (HttpRequest request) =>
     });
 });
 
-app.MapGet("/api/auth/windows", async (HttpContext context) =>
-{
-    var auth = await context.AuthenticateAsync(NegotiateDefaults.AuthenticationScheme);
-    if (!auth.Succeeded || auth.Principal?.Identity?.IsAuthenticated != true)
-    {
-        await context.ChallengeAsync(NegotiateDefaults.AuthenticationScheme);
-        return;
-    }
-
-    var windowsName = auth.Principal.Identity?.Name ?? "";
-    var email = WindowsEmail(windowsName);
-    using var conn = OpenDb();
-    EnsureUser(conn, email, windowsName, "windows");
-    var token = CreateUserSession(email, windowsName, "windows");
-    await Results.Json(new { token, email, displayName = windowsName, authType = "windows" }).ExecuteAsync(context);
-});
-
 app.MapPost("/api/{**rest}", async (string rest, HttpRequest request) =>
 {
     JsonObject payload;
@@ -99,21 +76,6 @@ app.MapPost("/api/{**rest}", async (string rest, HttpRequest request) =>
     try
     {
         var path = "/api/" + rest;
-
-        if (path == "/api/auth/register")
-        {
-            var email = NormalizeEmail(Required(payload, "email", "Email"));
-            var displayName = S(payload, "displayName", email).Trim();
-            var password = Required(payload, "password", "Password");
-            if (password.Length < 6) throw new AppError("Password must contain at least 6 characters.");
-            if (Rows(conn, "SELECT 1 FROM appUsers WHERE email=$email", new() { ["$email"] = email }).Any())
-                throw new AppError("User already exists.");
-            Exec(conn,
-                "INSERT INTO appUsers(email,displayName,passwordHash,authType,role,status,createdAt,lastLoginAt) VALUES($email,$displayName,$passwordHash,'password','student','active',$createdAt,'')",
-                new() { ["$email"] = email, ["$displayName"] = displayName, ["$passwordHash"] = HashPassword(password), ["$createdAt"] = NowIso() });
-            var token = CreateUserSession(email, displayName, "password", "student");
-            return Results.Json(new { token, email, displayName, authType = "password", role = "student", adminToken = "" });
-        }
 
         if (path == "/api/auth/login")
         {
@@ -745,27 +707,6 @@ bool VerifyPassword(string password, string stored)
     var expected = Convert.FromBase64String(parts[3]);
     var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, expected.Length);
     return CryptographicOperations.FixedTimeEquals(actual, expected);
-}
-
-void EnsureUser(SqliteConnection conn, string email, string displayName, string authType)
-{
-    if (Rows(conn, "SELECT 1 FROM appUsers WHERE email=$email", new() { ["$email"] = email }).Any())
-    {
-        Exec(conn, "UPDATE appUsers SET displayName=$displayName,lastLoginAt=$lastLoginAt WHERE email=$email",
-            new() { ["$displayName"] = displayName, ["$lastLoginAt"] = NowIso(), ["$email"] = email });
-        return;
-    }
-    Exec(conn,
-        "INSERT INTO appUsers(email,displayName,passwordHash,authType,role,status,createdAt,lastLoginAt) VALUES($email,$displayName,'',$authType,'student','active',$createdAt,$lastLoginAt)",
-        new() { ["$email"] = email, ["$displayName"] = displayName, ["$authType"] = authType, ["$createdAt"] = NowIso(), ["$lastLoginAt"] = NowIso() });
-}
-
-string WindowsEmail(string windowsName)
-{
-    var name = windowsName.Trim();
-    if (name.Contains('@')) return NormalizeEmail(name);
-    var user = name.Split('\\', '/').LastOrDefault() ?? name;
-    return NormalizeEmail($"{user}@windows.local");
 }
 
 object? ParseJsonObject(string json)

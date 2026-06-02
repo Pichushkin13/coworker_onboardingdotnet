@@ -202,7 +202,7 @@ async function load() {
   state.data = normalize(await api("/api/app-data"));
   if (!state.data.authUser) {
     clearSignedIn();
-    showAuthGate("Сессия истекла. Войдите снова.");
+    showAuthGate("Session expired. Sign in again.");
     return;
   }
   showAppShell();
@@ -228,6 +228,9 @@ function render() {
 }
 
 function showAuthGate(message = "") {
+  $("authGate").hidden = false;
+  $("appHeader").hidden = true;
+  $("appShell").hidden = true;
   $("authGate").classList.remove("hidden");
   $("appHeader").classList.add("hidden");
   $("appShell").classList.add("hidden");
@@ -235,6 +238,9 @@ function showAuthGate(message = "") {
 }
 
 function showAppShell() {
+  $("authGate").hidden = true;
+  $("appHeader").hidden = false;
+  $("appShell").hidden = false;
   $("authGate").classList.add("hidden");
   $("appHeader").classList.remove("hidden");
   $("appShell").classList.remove("hidden");
@@ -244,7 +250,7 @@ function renderAuth() {
   const user = state.authUser;
   $("authStatus").textContent = user ? `${user.role === "admin" ? "Admin: " : ""}${user.displayName || user.email}` : "Guest";
   $("authStatus").className = `runtime-status ${user ? "ready" : ""}`;
-  $("authBtn").textContent = user ? "Аккаунт" : "Войти";
+  $("authBtn").textContent = "Выйти";
 }
 
 function renderSidebar() {
@@ -1599,34 +1605,8 @@ async function loginFromGate() {
   }
 }
 
-async function registerFromGate() {
-  try {
-    $("gateMsg").textContent = "";
-    const response = await api("/api/auth/register", "POST", { email: $("gateEmail").value, displayName: $("gateName").value, password: $("gatePass").value });
-    setSignedIn(response);
-    await load();
-  } catch (e) {
-    $("gateMsg").textContent = e.message;
-  }
-}
-
-async function windowsLoginFromGate() {
-  try {
-    $("gateMsg").textContent = "";
-    const res = await fetch("/api/auth/windows", { credentials: "include" });
-    const payload = await res.json();
-    if (!res.ok) throw new Error(payload.error || "Windows authentication is not available.");
-    setSignedIn(payload);
-    await load();
-  } catch (e) {
-    $("gateMsg").textContent = "Windows authentication is unavailable here. Use email/password.";
-  }
-}
-
 $("authBtn").onclick = () => signOut();
 $("gateLogin").onclick = () => loginFromGate();
-$("gateRegister").onclick = () => registerFromGate();
-$("gateWindows").onclick = () => windowsLoginFromGate();
 $("gatePass").addEventListener("keydown", (event) => {
   if (event.key === "Enter") loginFromGate();
 });

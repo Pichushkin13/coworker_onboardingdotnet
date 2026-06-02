@@ -11,21 +11,27 @@
   <div class="bg-shape"></div>
   <section id="authGate" class="auth-gate-page">
     <div class="auth-card">
-      <h1>Training Library</h1>
-      <p>Войдите, чтобы проходить курсы и сохранять черновики ответов до submit.</p>
-      <input id="gateEmail" placeholder="email или admin" autocomplete="username" />
-      <input id="gateName" placeholder="display name для регистрации" autocomplete="name" />
-      <input id="gatePass" placeholder="password" type="password" autocomplete="current-password" />
+      <div class="training-logo" aria-hidden="true">
+        <span>TL</span>
+      </div>
+      <h1>Training Lab</h1>
+      <p>Sign in to continue your onboarding.</p>
+      <label>
+        <span>Login</span>
+        <input id="gateEmail" placeholder="admin or user@email.com" autocomplete="username" />
+      </label>
+      <label>
+        <span>Password</span>
+        <input id="gatePass" placeholder="password" type="password" autocomplete="current-password" />
+      </label>
       <div class="auth-actions">
         <button id="gateLogin">Войти</button>
-        <button id="gateRegister">Регистрация</button>
-        <button id="gateWindows">Windows</button>
       </div>
       <p id="gateMsg"></p>
     </div>
   </section>
 
-  <header id="appHeader" class="top hidden">
+  <header id="appHeader" class="top hidden" hidden>
     <h1>Training Library</h1>
     <div class="top-actions">
       <span id="pythonStatus" class="runtime-status"></span>
@@ -34,7 +40,7 @@
     </div>
   </header>
 
-  <main id="appShell" class="layout hidden">
+  <main id="appShell" class="layout hidden" hidden>
     <aside class="panel" id="courses"></aside>
     <section class="panel" id="content"></section>
   </main>
