@@ -912,9 +912,10 @@ function renderPythonStatus() {
   if (!el) return;
   if (!hasPythonActivities()) {
     el.textContent = "";
-    el.className = "runtime-status";
+    el.className = "runtime-status hidden";
     return;
   }
+  el.classList.remove("hidden");
   const labels = {
     idle: "Python idle",
     loading: "Python loading",
