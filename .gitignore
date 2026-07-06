@@ -8,3 +8,4 @@ obj/
 __pycache__/
 .env
 *.log
+.dotnet-sdk/

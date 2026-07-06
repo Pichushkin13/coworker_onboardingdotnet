@@ -335,6 +335,121 @@ app.MapPost("/api/{**rest}", async (string rest, HttpRequest request) =>
             return Results.Json(new { status = "ok" });
         }
 
+        if (path == "/api/admin/assessment-attempts")
+        {
+            RequireAdmin(payload);
+            var moduleId = S(payload, "moduleId");
+            var courseId = S(payload, "courseId");
+            var status = S(payload, "resultStatus");
+            var attempts = Rows(conn,
+                """
+                SELECT a.*, c.title AS courseTitle, m.title AS moduleTitle, m.passingScore AS passingScore
+                FROM assessmentAttempts a
+                LEFT JOIN courses c ON c.courseId=a.courseId
+                LEFT JOIN modules m ON m.moduleId=a.assessmentBlockId
+                WHERE ($moduleId='' OR a.assessmentBlockId=$moduleId)
+                  AND ($courseId='' OR a.courseId=$courseId)
+                  AND ($resultStatus='' OR a.resultStatus=$resultStatus)
+                ORDER BY a.submittedAt DESC
+                """,
+                new() { ["$moduleId"] = moduleId, ["$courseId"] = courseId, ["$resultStatus"] = status });
+
+            var result = attempts.Select(attempt =>
+            {
+                var attemptId = ObjString(attempt, "attemptId");
+                var tasks = Rows(conn, "SELECT validationStatus, manualReviewRequired, reviewedAt FROM assessmentTaskAttempts WHERE attemptId=$attemptId",
+                    new() { ["$attemptId"] = attemptId });
+                attempt["taskCount"] = tasks.Count;
+                attempt["pendingTaskCount"] = tasks.Count(t =>
+                    ObjString(t, "validationStatus") == "pending_review" ||
+                    (Truthy(ObjString(t, "manualReviewRequired")) && ObjString(t, "reviewedAt").Length == 0));
+                return attempt;
+            }).ToList();
+            return Results.Json(new { attempts = result });
+        }
+
+        if (path == "/api/admin/assessment-attempt")
+        {
+            RequireAdmin(payload);
+            var attemptId = Required(payload, "attemptId", "Attempt ID");
+            var attempt = Rows(conn,
+                """
+                SELECT a.*, c.title AS courseTitle, m.title AS moduleTitle, m.passingScore AS passingScore
+                FROM assessmentAttempts a
+                LEFT JOIN courses c ON c.courseId=a.courseId
+                LEFT JOIN modules m ON m.moduleId=a.assessmentBlockId
+                WHERE a.attemptId=$attemptId
+                """,
+                new() { ["$attemptId"] = attemptId }).FirstOrDefault() ?? throw new AppError("Assessment attempt not found.");
+            var tasks = Rows(conn,
+                """
+                SELECT t.*, act.title, act.content, act.configJson, act.validationJson, act.points
+                FROM assessmentTaskAttempts t
+                LEFT JOIN activities act ON act.activityId=t.assessmentTaskId
+                WHERE t.attemptId=$attemptId
+                ORDER BY act.displayOrder
+                """,
+                new() { ["$attemptId"] = attemptId });
+            return Results.Json(new { attempt, tasks });
+        }
+
+        if (path == "/api/admin/assessment/review")
+        {
+            var admin = RequireAdminSession(payload);
+            var attemptId = Required(payload, "attemptId", "Attempt ID");
+            var attempt = Rows(conn, "SELECT * FROM assessmentAttempts WHERE attemptId=$attemptId",
+                new() { ["$attemptId"] = attemptId }).FirstOrDefault() ?? throw new AppError("Assessment attempt not found.");
+            var reviews = payload["taskReviews"] as JsonArray ?? new JsonArray();
+            foreach (var node in reviews)
+            {
+                if (node is not JsonObject review) continue;
+                var taskAttemptId = Required(review, "taskAttemptId", "Task attempt ID");
+                var task = Rows(conn,
+                    """
+                    SELECT t.*, act.points
+                    FROM assessmentTaskAttempts t
+                    LEFT JOIN activities act ON act.activityId=t.assessmentTaskId
+                    WHERE t.taskAttemptId=$taskAttemptId AND t.attemptId=$attemptId
+                    """,
+                    new() { ["$taskAttemptId"] = taskAttemptId, ["$attemptId"] = attemptId }).FirstOrDefault()
+                    ?? throw new AppError("Task attempt not found.");
+                var max = Math.Max(0, ObjInt(task, "points"));
+                var score = Math.Clamp(I(review, "score"), 0, max);
+                var validationStatus = S(review, "validationStatus", score > 0 ? "passed" : "failed");
+                if (validationStatus is not ("passed" or "failed" or "pending_review" or "not_checked"))
+                    validationStatus = score > 0 ? "passed" : "failed";
+                Exec(conn,
+                    """
+                    UPDATE assessmentTaskAttempts
+                    SET score=$score, validationStatus=$validationStatus, reviewComment=$reviewComment,
+                        reviewedBy=$reviewedBy, reviewedAt=$reviewedAt
+                    WHERE taskAttemptId=$taskAttemptId
+                    """,
+                    new()
+                    {
+                        ["$score"] = score,
+                        ["$validationStatus"] = validationStatus,
+                        ["$reviewComment"] = S(review, "reviewComment"),
+                        ["$reviewedBy"] = admin.Username,
+                        ["$reviewedAt"] = NowIso(),
+                        ["$taskAttemptId"] = taskAttemptId
+                    });
+            }
+
+            var summary = RecalculateAssessmentAttempt(conn, attempt);
+            Exec(conn,
+                "UPDATE assessmentAttempts SET reviewComment=$reviewComment, reviewedBy=$reviewedBy, reviewedAt=$reviewedAt WHERE attemptId=$attemptId",
+                new()
+                {
+                    ["$reviewComment"] = S(payload, "reviewComment"),
+                    ["$reviewedBy"] = admin.Username,
+                    ["$reviewedAt"] = NowIso(),
+                    ["$attemptId"] = attemptId
+                });
+            summary["status"] = "ok";
+            return Results.Json(summary);
+        }
+
         if (path == "/api/assessment/start-attempt")
         {
             var userEmail = UserEmail(request);
@@ -526,7 +641,10 @@ CREATE TABLE IF NOT EXISTS assessmentAttempts (
   submittedAt TEXT,
   lockedAfterSubmit TEXT,
   submissionReason TEXT,
-  sessionId TEXT
+  sessionId TEXT,
+  reviewedBy TEXT,
+  reviewedAt TEXT,
+  reviewComment TEXT
 );
 CREATE TABLE IF NOT EXISTS assessmentTaskAttempts (
   taskAttemptId TEXT PRIMARY KEY,
@@ -541,7 +659,10 @@ CREATE TABLE IF NOT EXISTS assessmentTaskAttempts (
   validationStatus TEXT,
   validationOutput TEXT,
   score INTEGER,
-  manualReviewRequired TEXT
+  manualReviewRequired TEXT,
+  reviewedBy TEXT,
+  reviewedAt TEXT,
+  reviewComment TEXT
 );
 CREATE TABLE IF NOT EXISTS assessmentAttemptOverrides (
   overrideId TEXT PRIMARY KEY,
@@ -608,7 +729,160 @@ CREATE TABLE IF NOT EXISTS answerDrafts (
     {
         Exec(conn, "UPDATE appUsers SET role='admin', status='active' WHERE email='admin@example.local'");
     }
+    AddColumnIfMissing(conn, "assessmentAttempts", "reviewedBy", "TEXT");
+    AddColumnIfMissing(conn, "assessmentAttempts", "reviewedAt", "TEXT");
+    AddColumnIfMissing(conn, "assessmentAttempts", "reviewComment", "TEXT");
+    AddColumnIfMissing(conn, "assessmentTaskAttempts", "reviewedBy", "TEXT");
+    AddColumnIfMissing(conn, "assessmentTaskAttempts", "reviewedAt", "TEXT");
+    AddColumnIfMissing(conn, "assessmentTaskAttempts", "reviewComment", "TEXT");
+    SeedAssessmentDemoData(conn);
+    NormalizeAssessmentDemoData(conn);
 }
+
+void SeedAssessmentDemoData(SqliteConnection conn)
+{
+    if (Rows(conn, "SELECT 1 FROM assessmentAttempts WHERE attemptId LIKE 'demo_seed_%'").Any()) return;
+
+    var module = Rows(conn, "SELECT * FROM modules WHERE moduleType='assessment' AND status='active' ORDER BY displayOrder LIMIT 1").FirstOrDefault();
+    if (module is null) return;
+
+    var tasks = ActiveRows(Rows(conn, "SELECT * FROM activities WHERE moduleId=$moduleId ORDER BY displayOrder",
+        new() { ["$moduleId"] = ObjString(module, "moduleId") }))
+        .Where(t => ObjString(t, "activityType") != "assessment_block")
+        .ToList();
+    if (!tasks.Any()) return;
+
+    var now = DateTimeOffset.UtcNow;
+    var students = new[]
+    {
+        new { Id = "anna", Email = "anna.ivanova@example.com", Name = "Anna Ivanova", Rate = 0.92, Pending = false, Reviewed = true, Comment = "Strong final submission." },
+        new { Id = "mikhail", Email = "mikhail.petrov@example.com", Name = "Mikhail Petrov", Rate = 0.76, Pending = false, Reviewed = true, Comment = "Close to passing, needs cleaner justification." },
+        new { Id = "elena", Email = "elena.smirnova@example.com", Name = "Elena Smirnova", Rate = 0.64, Pending = true, Reviewed = false, Comment = "Open answer is waiting for review." },
+        new { Id = "david", Email = "david.karapetyan@example.com", Name = "David Karapetyan", Rate = 0.48, Pending = false, Reviewed = true, Comment = "Needs another attempt after reviewing the basics." }
+    };
+
+    foreach (var student in students)
+    {
+        Exec(conn,
+            """
+            INSERT INTO appUsers(email,displayName,passwordHash,authType,role,status,createdAt,lastLoginAt)
+            VALUES($email,$displayName,$passwordHash,'password','student','active',$createdAt,'')
+            ON CONFLICT(email) DO UPDATE SET displayName=$displayName, role='student', status='active'
+            """,
+            new()
+            {
+                ["$email"] = student.Email,
+                ["$displayName"] = student.Name,
+                ["$passwordHash"] = HashPassword("student"),
+                ["$createdAt"] = now.AddDays(-12).ToString("O")
+            });
+
+        var attemptId = $"demo_seed_{student.Id}_attempt_1";
+        Exec(conn,
+            "INSERT INTO assessmentAttempts(attemptId,userEmail,courseId,assessmentBlockId,attemptNo,totalScore,maxScore,scorePercent,resultStatus,submittedAt,lockedAfterSubmit,submissionReason,sessionId,reviewedBy,reviewedAt,reviewComment) VALUES($attemptId,$userEmail,$courseId,$assessmentBlockId,1,0,0,0,'pending_review',$submittedAt,$lockedAfterSubmit,'manual','',$reviewedBy,$reviewedAt,$reviewComment)",
+            new()
+            {
+                ["$attemptId"] = attemptId,
+                ["$userEmail"] = student.Email,
+                ["$courseId"] = ObjString(module, "courseId"),
+                ["$assessmentBlockId"] = ObjString(module, "moduleId"),
+                ["$submittedAt"] = now.AddDays(-students.ToList().IndexOf(student) - 1).ToString("O"),
+                ["$lockedAfterSubmit"] = ObjString(module, "lockAfterSubmit", "True"),
+                ["$reviewedBy"] = student.Reviewed ? "admin" : "",
+                ["$reviewedAt"] = student.Reviewed ? now.AddDays(-1).ToString("O") : "",
+                ["$reviewComment"] = student.Comment
+            });
+
+        foreach (var task in tasks)
+        {
+            var activityId = ObjString(task, "activityId");
+            var taskType = ObjString(task, "activityType");
+            var max = ObjInt(task, "points");
+            var isOpen = taskType == "open_answer";
+            var pending = student.Pending && isOpen;
+            var score = pending ? 0 : Math.Clamp((int)Math.Round(max * student.Rate), 0, max);
+            var validationStatus = pending ? "pending_review" : "passed";
+            var reviewComment = pending ? "" : (student.Rate >= 0.8 ? "Accepted." : "Reviewed with partial credit.");
+            Exec(conn,
+                "INSERT INTO assessmentTaskAttempts(taskAttemptId,attemptId,userEmail,assessmentBlockId,assessmentTaskId,taskType,answerJson,interpreterStatus,interpreterOutput,validationStatus,validationOutput,score,manualReviewRequired,reviewedBy,reviewedAt,reviewComment) VALUES($taskAttemptId,$attemptId,$userEmail,$assessmentBlockId,$assessmentTaskId,$taskType,$answerJson,$interpreterStatus,$interpreterOutput,$validationStatus,$validationOutput,$score,$manualReviewRequired,$reviewedBy,$reviewedAt,$reviewComment)",
+                new()
+                {
+                    ["$taskAttemptId"] = $"demo_seed_{student.Id}_{activityId}",
+                    ["$attemptId"] = attemptId,
+                    ["$userEmail"] = student.Email,
+                    ["$assessmentBlockId"] = ObjString(module, "moduleId"),
+                    ["$assessmentTaskId"] = activityId,
+                    ["$taskType"] = taskType,
+                    ["$answerJson"] = DemoAnswerJson(task, student.Name, student.Rate),
+                    ["$interpreterStatus"] = taskType is "sql_task" or "python_task" ? "success" : "",
+                    ["$interpreterOutput"] = DemoInterpreterOutput(taskType),
+                    ["$validationStatus"] = validationStatus,
+                    ["$validationOutput"] = DemoValidationOutput(taskType, pending),
+                    ["$score"] = score,
+                    ["$manualReviewRequired"] = ObjString(task, "manualReviewRequired"),
+                    ["$reviewedBy"] = pending ? "" : "admin",
+                    ["$reviewedAt"] = pending ? "" : now.AddDays(-1).ToString("O"),
+                    ["$reviewComment"] = reviewComment
+                });
+        }
+
+        var attempt = Rows(conn, "SELECT * FROM assessmentAttempts WHERE attemptId=$attemptId", new() { ["$attemptId"] = attemptId }).First();
+        RecalculateAssessmentAttempt(conn, attempt);
+    }
+}
+
+void NormalizeAssessmentDemoData(SqliteConnection conn)
+{
+    Exec(conn,
+        """
+        UPDATE assessmentTaskAttempts
+        SET interpreterOutput = CASE
+            WHEN taskType='sql_task' THEN 'Query returned the expected rows.'
+            WHEN taskType='python_task' THEN '83.0'
+            ELSE ''
+        END
+        WHERE taskAttemptId LIKE 'demo_seed_%'
+          AND interpreterOutput IN ('Demo execution completed.', 'Demo execution completed')
+        """);
+    Exec(conn,
+        """
+        UPDATE assessmentTaskAttempts
+        SET validationOutput = CASE
+            WHEN validationStatus='pending_review' THEN 'Waiting for manual review.'
+            WHEN taskType='sql_task' THEN 'Expected columns and rows matched.'
+            WHEN taskType='python_task' THEN 'Printed output matched the expected value.'
+            WHEN taskType='quiz' THEN 'Quiz answers were checked automatically.'
+            ELSE ''
+        END
+        WHERE taskAttemptId LIKE 'demo_seed_%'
+          AND validationOutput IN ('Demo validation result.', 'Demo validation result')
+        """);
+}
+
+string DemoAnswerJson(Dictionary<string, object?> task, string studentName, double rate)
+{
+    var taskType = ObjString(task, "activityType");
+    if (taskType == "quiz") return JsonSerializer.Serialize(new { correct = rate >= 0.8 ? 3 : rate >= 0.6 ? 2 : 1, total = 3, selectedAnswers = new[] { new[] { 0 }, new[] { 1 }, new[] { rate >= 0.6 ? 0 : 1 } } });
+    if (taskType == "sql_task") return JsonSerializer.Serialize(new { query = "SELECT customer_id, COUNT(*) AS orders_count FROM orders GROUP BY customer_id;", rows = new[] { new { customer_id = 1, orders_count = 3 } } });
+    if (taskType == "python_task") return JsonSerializer.Serialize(new { code = "scores = [82, 91, 76]\nprint(sum(scores) / len(scores))", output = "83.0" });
+    if (taskType == "open_answer") return JsonSerializer.Serialize(new { text = $"{studentName} explains the solution, assumptions, risks, and next steps in a structured written answer. The answer is intentionally seeded for admin review." });
+    return "{}";
+}
+
+string DemoInterpreterOutput(string taskType) => taskType switch
+{
+    "sql_task" => "Query returned the expected rows.",
+    "python_task" => "83.0",
+    _ => ""
+};
+
+string DemoValidationOutput(string taskType, bool pending) => pending ? "Waiting for manual review." : taskType switch
+{
+    "sql_task" => "Expected columns and rows matched.",
+    "python_task" => "Printed output matched the expected value.",
+    "quiz" => "Quiz answers were checked automatically.",
+    _ => ""
+};
 
 List<Dictionary<string, object?>> Rows(SqliteConnection conn, string sql, Dictionary<string, object?>? parameters = null)
 {
@@ -778,6 +1052,11 @@ int ObjInt(Dictionary<string, object?> row, string field, int fallback = 0)
 
 void RequireAdmin(JsonObject payload)
 {
+    RequireAdminSession(payload);
+}
+
+AdminSession RequireAdminSession(JsonObject payload)
+{
     var token = S(payload, "token");
     if (token.Length == 0 || !sessions.TryGetValue(token, out var session))
         throw new AppError("Admin session expired. Sign in again.");
@@ -786,6 +1065,7 @@ void RequireAdmin(JsonObject payload)
         sessions.TryRemove(token, out _);
         throw new AppError("Admin session expired. Sign in again.");
     }
+    return session;
 }
 
 string Token()
@@ -1078,6 +1358,51 @@ Dictionary<string, object?> CompleteAssessmentAttempt(
         ["scorePercent"] = percent,
         ["resultStatus"] = resultStatus,
         ["submissionReason"] = reason
+    };
+}
+
+Dictionary<string, object?> RecalculateAssessmentAttempt(SqliteConnection conn, Dictionary<string, object?> attempt)
+{
+    var attemptId = ObjString(attempt, "attemptId");
+    var tasks = Rows(conn,
+        """
+        SELECT t.*, act.points
+        FROM assessmentTaskAttempts t
+        LEFT JOIN activities act ON act.activityId=t.assessmentTaskId
+        WHERE t.attemptId=$attemptId
+        """,
+        new() { ["$attemptId"] = attemptId });
+    var totalScore = tasks.Sum(t => ObjInt(t, "score"));
+    var maxScore = tasks.Sum(t => ObjInt(t, "points"));
+    var percent = maxScore > 0 ? (int)Math.Round(totalScore * 100.0 / maxScore) : 0;
+    var pendingReview = tasks.Any(t =>
+        ObjString(t, "validationStatus") == "pending_review" ||
+        (Truthy(ObjString(t, "manualReviewRequired")) && ObjString(t, "reviewedAt").Length == 0));
+    var failed = tasks.Any(t => ObjString(t, "validationStatus") is "failed" or "error" or "not_checked");
+    var module = Rows(conn, "SELECT * FROM modules WHERE moduleId=$moduleId",
+        new() { ["$moduleId"] = ObjString(attempt, "assessmentBlockId") }).FirstOrDefault();
+    var passingScore = module is null ? 0 : ObjInt(module, "passingScore");
+    var resultStatus = pendingReview ? "pending_review" : (!failed && percent >= passingScore ? "passed" : "failed");
+    Exec(conn,
+        "UPDATE assessmentAttempts SET totalScore=$totalScore,maxScore=$maxScore,scorePercent=$scorePercent,resultStatus=$resultStatus WHERE attemptId=$attemptId",
+        new()
+        {
+            ["$totalScore"] = totalScore,
+            ["$maxScore"] = maxScore,
+            ["$scorePercent"] = percent,
+            ["$resultStatus"] = resultStatus,
+            ["$attemptId"] = attemptId
+        });
+    return new()
+    {
+        ["attemptId"] = attemptId,
+        ["totalScore"] = totalScore,
+        ["maxScore"] = maxScore,
+        ["scorePercent"] = percent,
+        ["resultStatus"] = resultStatus,
+        ["pendingTaskCount"] = tasks.Count(t =>
+            ObjString(t, "validationStatus") == "pending_review" ||
+            (Truthy(ObjString(t, "manualReviewRequired")) && ObjString(t, "reviewedAt").Length == 0))
     };
 }
 

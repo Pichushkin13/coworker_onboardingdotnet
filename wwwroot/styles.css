@@ -262,6 +262,10 @@ dialog button:hover {
   position: sticky;
   top: 18px;
   align-self: start;
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .side-head {
@@ -278,6 +282,28 @@ dialog button:hover {
   flex-direction: column;
   gap: 8px;
   margin-bottom: 17px;
+}
+
+.admin-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.admin-tabs button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  padding: 10px;
+  font-weight: 800;
+}
+
+.admin-tabs button.active {
+  background: #151b18;
+  border-color: #151b18;
+  color: #fff;
 }
 
 .admin-row {
@@ -396,6 +422,16 @@ dialog button:hover {
 .badge.grey {
   background: #f0f3f1;
   color: #56625b;
+}
+
+.badge.warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
+
+.badge.danger {
+  background: #fdecec;
+  color: var(--danger);
 }
 
 .activity-unit {
@@ -581,6 +617,17 @@ dialog input {
 
 .field textarea {
   min-height: 110px;
+}
+
+.manual-input-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  margin: -2px 0 10px;
+}
+
+.manual-input-hint.warn {
+  color: var(--danger);
 }
 
 .code-area {
@@ -846,6 +893,124 @@ th {
   color: #cfdbd2;
 }
 
+.review-panel {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.review-head,
+.review-summary,
+.review-task-head,
+.attempt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-head h3 {
+  margin: 0 0 4px;
+}
+
+.review-list {
+  margin-top: 12px;
+}
+
+.control-page .module-header {
+  align-items: flex-start;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.metric-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  padding: 12px;
+}
+
+.metric-card b {
+  display: block;
+  font-size: 24px;
+}
+
+.metric-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.attempt-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+  margin: 8px 0;
+}
+
+.attempt-score {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-weight: 800;
+}
+
+.review-summary {
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.review-task {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 13px;
+  margin: 12px 0;
+  background: #fff;
+}
+
+.answer-box {
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 10px 0;
+  padding: 10px;
+}
+
+.answer-text {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.review-question {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 0;
+}
+
+.review-question:last-child {
+  border-bottom: 0;
+}
+
+.review-output {
+  background: #111715;
+  color: #eef7ef;
+  border-radius: 8px;
+  padding: 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 .editor-card {
   padding: 13px;
   background: var(--soft);
@@ -989,6 +1154,7 @@ dialog::backdrop {
   .drag-grid,
   .grid-2,
   .grid-3,
+  .metric-grid,
   .pair-row,
   .answer-row {
     grid-template-columns: 1fr;
@@ -996,5 +1162,7 @@ dialog::backdrop {
 
   #courses {
     position: static;
+    max-height: none;
+    overflow: visible;
   }
 }

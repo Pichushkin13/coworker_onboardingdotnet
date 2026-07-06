@@ -15,6 +15,8 @@ let state = {
   authUser: parseJson(localStorage.getItem("authUser"), null),
   draftTimers: {},
   authMode: "login",
+  adminView: localStorage.getItem("adminView") || "builder",
+  controlModule: localStorage.getItem("controlModule") || "",
   restoreScrollPending: true,
   scrollTimer: null
 };
@@ -249,7 +251,7 @@ function render() {
   renderMain();
   renderAuth();
   renderPythonStatus();
-  initAdminSorting();
+  if (isBuilderView()) initAdminSorting();
 }
 
 function showAuthGate(message = "") {
@@ -280,8 +282,13 @@ function renderAuth() {
 }
 
 function renderSidebar() {
+  if (state.adminToken && state.adminView === "control") {
+    renderControlSidebar();
+    return;
+  }
   const courses = state.data.courses.filter(isActive).sort(byOrder);
   $("courses").innerHTML = `
+    ${state.adminToken ? renderAdminTabs() : ""}
     <div class="side-head">Courses</div>
     <div class="nav-list" id="courseList">
       ${courses.map((c) => `
@@ -314,6 +321,10 @@ function renderSidebar() {
 }
 
 function renderMain() {
+  if (state.adminToken && state.adminView === "control") {
+    renderKnowledgeControl();
+    return;
+  }
   const module = state.data.modules.find((m) => m.moduleId === state.selectedModule);
   if (!module) {
     $("content").innerHTML = "<p class='muted'>Select a module.</p>";
@@ -387,9 +398,9 @@ function renderActivity(a, assessment) {
   if (a.activityType === "practice_quiz" || a.activityType === "quiz") return renderQuiz(a, assessment);
   if (a.activityType === "drag_mapping") return renderMapping(a);
   if (a.activityType === "drag_order") return renderOrder(a);
-  if (a.activityType === "sql_practice" || a.activityType === "sql_task") return renderSql(a);
-  if (a.activityType === "python_practice" || a.activityType === "python_task") return renderPython(a);
-  if (a.activityType === "open_answer") return renderOpenAnswer(a);
+  if (a.activityType === "sql_practice" || a.activityType === "sql_task") return renderSql(a, assessment);
+  if (a.activityType === "python_practice" || a.activityType === "python_task") return renderPython(a, assessment);
+  if (a.activityType === "open_answer") return renderOpenAnswer(a, assessment);
   if (a.activityType === "assessment_block") return `<div class="result warn">Assessment block is represented by the module itself in this version.</div>`;
   return `<div class="result warn">Unsupported activity type: ${esc(a.activityType)}</div>`;
 }
@@ -495,7 +506,15 @@ function renderOrder(a) {
   `;
 }
 
-function renderSql(a) {
+function manualInputAttrs(assessment) {
+  return assessment && !state.adminToken ? ` data-manual-input="true" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"` : "";
+}
+
+function manualInputHint(assessment) {
+  return assessment && !state.adminToken ? `<div class="manual-input-hint">Paste and drag-and-drop are disabled for this assessment field.</div>` : "";
+}
+
+function renderSql(a, assessment) {
   return `
     <div class="task-card">
       <h3>${esc(a.title || "SQL task")}</h3>
@@ -504,7 +523,8 @@ function renderSql(a) {
         <button class="btn ghost small" id="db_btn_${esc(a.activityId)}" onclick="toggleTables('${esc(a.activityId)}','${esc(a.config.databaseSchemaId || "")}')">View demo tables</button>
       </div>
       <div id="db_${esc(a.activityId)}"></div>
-      <div class="field"><textarea class="sql-editor" id="sql_${esc(a.activityId)}">${esc(a.config.defaultQuery || "")}</textarea></div>
+      <div class="field"><textarea class="sql-editor" id="sql_${esc(a.activityId)}"${manualInputAttrs(assessment)}>${esc(a.config.defaultQuery || "")}</textarea></div>
+      ${manualInputHint(assessment)}
       <button class="btn" onclick="runSql('${esc(a.activityId)}')">Run SQL</button>
       <div id="sql_error_${esc(a.activityId)}"></div>
       <div id="sql_result_${esc(a.activityId)}" class="sql-table-wrap"></div>
@@ -512,12 +532,13 @@ function renderSql(a) {
   `;
 }
 
-function renderPython(a) {
+function renderPython(a, assessment) {
   return `
     <div class="task-card">
       <h3>${esc(a.title || "Python task")}</h3>
       <div class="muted">${esc(a.config.instructions || a.content || "")}</div>
-      <div class="field"><textarea class="python-editor" id="python_${esc(a.activityId)}">${esc(a.config.starterCode || "")}</textarea></div>
+      <div class="field"><textarea class="python-editor" id="python_${esc(a.activityId)}"${manualInputAttrs(assessment)}>${esc(a.config.starterCode || "")}</textarea></div>
+      ${manualInputHint(assessment)}
       <button class="btn" onclick="runPython('${esc(a.activityId)}')">Run Python</button>
       <div id="python_error_${esc(a.activityId)}"></div>
       <div id="python_result_${esc(a.activityId)}"></div>
@@ -525,14 +546,15 @@ function renderPython(a) {
   `;
 }
 
-function renderOpenAnswer(a) {
+function renderOpenAnswer(a, assessment) {
   return `
     <div class="task-card">
       <h3>${esc(a.title || "Open answer")}</h3>
       <div class="muted">${esc(a.content || "")}</div>
       <div class="field">
-        <textarea id="open_${esc(a.activityId)}" placeholder="${esc(a.config.placeholder || "Write your answer...")}"></textarea>
+        <textarea id="open_${esc(a.activityId)}" placeholder="${esc(a.config.placeholder || "Write your answer...")}"${manualInputAttrs(assessment)}></textarea>
       </div>
+      ${manualInputHint(assessment)}
     </div>
   `;
 }
@@ -584,6 +606,79 @@ function renderAssessmentModule(module, tasks) {
   return assessmentHtml;
 }
 
+function renderAdminTabs() {
+  return `
+    <div class="admin-tabs">
+      <button class="${state.adminView === "builder" ? "active" : ""}" onclick="setAdminView('builder')">Конструктор</button>
+      <button class="${state.adminView === "control" ? "active" : ""}" onclick="setAdminView('control')">Контроль знаний</button>
+    </div>
+  `;
+}
+
+function setAdminView(view) {
+  state.adminView = view === "control" ? "control" : "builder";
+  localStorage.setItem("adminView", state.adminView);
+  render();
+}
+
+function isBuilderView() {
+  return !state.adminToken || state.adminView === "builder";
+}
+
+function assessmentModules() {
+  return state.data.modules.filter((m) => m.moduleType === "assessment" && isActive(m)).sort(byOrder);
+}
+
+function renderControlSidebar() {
+  const assessments = assessmentModules();
+  $("courses").innerHTML = `
+    ${renderAdminTabs()}
+    <div class="side-head">Assessment modules</div>
+    <div class="nav-list">
+      <button class="nav-card ${state.controlModule === "" ? "active" : ""}" onclick="selectControlModule('')">
+        <b>Все модули</b>
+        <span>Общая аналитика и контроль</span>
+      </button>
+      ${assessments.map((m) => {
+        const course = state.data.courses.find((c) => c.courseId === m.courseId);
+        return `
+          <button class="nav-card ${state.controlModule === m.moduleId ? "active" : ""}" onclick="selectControlModule('${esc(m.moduleId)}')">
+            <b>${esc(m.title)}</b>
+            <span>${esc(course?.title || m.courseId)}</span>
+          </button>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function selectControlModule(moduleId) {
+  state.controlModule = moduleId;
+  localStorage.setItem("controlModule", moduleId);
+  render();
+}
+
+function renderKnowledgeControl() {
+  const module = state.controlModule ? state.data.modules.find((m) => m.moduleId === state.controlModule) : null;
+  $("content").innerHTML = `
+    <section class="module-page control-page">
+      <div class="module-header">
+        <div>
+          <span class="badge black">Контроль знаний</span>
+          <h2>${module ? esc(module.title) : "Все assessment-попытки"}</h2>
+          <div class="muted">Просмотр прохождений, ручная проверка открытых ответов и статусы студентов.</div>
+        </div>
+        <button class="btn ghost small" onclick="loadAssessmentAttempts('${esc(state.controlModule)}','knowledge_attempts')">Refresh</button>
+      </div>
+      <div id="knowledge_summary" class="metric-grid"></div>
+      <div id="knowledge_attempts" class="review-list">
+        <div class="muted">Loading submissions...</div>
+      </div>
+    </section>
+  `;
+  setTimeout(() => loadAssessmentAttempts(state.controlModule, "knowledge_attempts"), 0);
+}
+
 function sanitizeRichHtml(html) {
   const template = document.createElement("template");
   template.innerHTML = String(html || "");
@@ -610,7 +705,36 @@ function initInteractiveActivities() {
   document.querySelectorAll(".activity-unit").forEach((container) => initMappingDrag(container));
   document.querySelectorAll(".order-list").forEach((list) => initOrderDrag(list));
   initDraftListeners();
+  initManualInputOnly();
   refreshOrderNumbers();
+}
+
+function initManualInputOnly() {
+  document.querySelectorAll("[data-manual-input='true']").forEach((input) => {
+    const block = (event) => {
+      event.preventDefault();
+      showManualInputMessage(input);
+    };
+    input.onpaste = block;
+    input.ondrop = block;
+    input.oncontextmenu = block;
+    input.onbeforeinput = (event) => {
+      if (["insertFromPaste", "insertFromDrop", "insertFromYank"].includes(event.inputType)) block(event);
+    };
+  });
+}
+
+function showManualInputMessage(input) {
+  const card = input.closest(".task-card");
+  const hint = card?.querySelector(".manual-input-hint");
+  if (!hint) return;
+  hint.textContent = "Paste is disabled here. Please type the answer manually.";
+  hint.classList.add("warn");
+  clearTimeout(hint._timer);
+  hint._timer = setTimeout(() => {
+    hint.textContent = "Paste and drag-and-drop are disabled for this assessment field.";
+    hint.classList.remove("warn");
+  }, 2200);
 }
 
 function initDraftListeners() {
@@ -1007,14 +1131,16 @@ async function submitAssessment(moduleId, autoExpired) {
     if (error && !autoExpired) return;
     if (a.activityType === "quiz") {
       let correct = 0;
+      const selectedAnswers = [];
       (a.config.questions || []).forEach((q, i) => {
         const selected = [...document.querySelectorAll(`[name="q_${css(a.activityId)}_${i}"]:checked`)].map((n) => Number(n.value)).sort();
+        selectedAnswers.push(selected);
         if (JSON.stringify(selected) === JSON.stringify((q.correctAnswers || []).slice().sort())) correct += 1;
       });
       const total = (a.config.questions || []).length;
       results.push({
         activityId: a.activityId,
-        answer: { correct },
+        answer: { correct, total, selectedAnswers },
         validationStatus: correct === total ? "passed" : "failed",
         score: total ? Math.round(Number(a.points || 0) * correct / total) : 0
       });
@@ -1079,6 +1205,201 @@ async function submitAssessment(moduleId, autoExpired) {
     state.timedSubmitStarted = false;
     showResult("assessment_result", e.message, "error");
   }
+}
+
+async function loadAssessmentAttempts(moduleId = "", targetId = `assessment_reviews_${moduleId}`) {
+  const box = $(targetId);
+  if (!box) return;
+  box.innerHTML = "<div class='muted'>Loading submissions...</div>";
+  try {
+    const response = await api("/api/admin/assessment-attempts", "POST", {
+      token: state.adminToken,
+      moduleId
+    });
+    const attempts = response.attempts || [];
+    if (targetId === "knowledge_attempts") renderKnowledgeSummary(attempts);
+    if (!attempts.length) {
+      box.innerHTML = "<div class='result warn'>No submissions for this assessment yet.</div>";
+      return;
+    }
+    box.innerHTML = attempts.map((attempt) => `
+      <div class="attempt-row">
+        <div>
+          <b>${esc(attempt.userEmail)}</b>
+          <div class="muted">Attempt ${esc(attempt.attemptNo)} - ${esc(formatDate(attempt.submittedAt))}</div>
+        </div>
+        <div class="attempt-score">
+          <span class="badge ${statusBadgeClass(attempt.resultStatus)}">${esc(statusText(attempt.resultStatus))}</span>
+          <span>${esc(attempt.totalScore)} / ${esc(attempt.maxScore)} (${esc(attempt.scorePercent)}%)</span>
+          ${Number(attempt.pendingTaskCount || 0) ? `<span class="badge grey">${esc(attempt.pendingTaskCount)} pending</span>` : ""}
+        </div>
+        <button class="btn small" onclick="openAssessmentAttempt('${esc(attempt.attemptId)}')">Open</button>
+      </div>
+    `).join("");
+  } catch (e) {
+    box.innerHTML = `<div class="result error">${esc(e.message)}</div>`;
+  }
+}
+
+function renderKnowledgeSummary(attempts) {
+  const box = $("knowledge_summary");
+  if (!box) return;
+  const total = attempts.length;
+  const passed = attempts.filter((a) => a.resultStatus === "passed").length;
+  const failed = attempts.filter((a) => a.resultStatus === "failed").length;
+  const pending = attempts.filter((a) => a.resultStatus === "pending_review").length;
+  const students = new Set(attempts.map((a) => a.userEmail)).size;
+  const avg = total ? Math.round(attempts.reduce((sum, a) => sum + Number(a.scorePercent || 0), 0) / total) : 0;
+  box.innerHTML = `
+    <div class="metric-card"><b>${esc(students)}</b><span>Students</span></div>
+    <div class="metric-card"><b>${esc(total)}</b><span>Attempts</span></div>
+    <div class="metric-card"><b>${esc(avg)}%</b><span>Average score</span></div>
+    <div class="metric-card"><b>${esc(pending)}</b><span>Pending review</span></div>
+    <div class="metric-card"><b>${esc(passed)}</b><span>Passed</span></div>
+    <div class="metric-card"><b>${esc(failed)}</b><span>Failed</span></div>
+  `;
+}
+
+async function openAssessmentAttempt(attemptId) {
+  try {
+    const response = await api("/api/admin/assessment-attempt", "POST", {
+      token: state.adminToken,
+      attemptId
+    });
+    const attempt = response.attempt;
+    const tasks = response.tasks || [];
+    modal(`
+      ${modalHeader("Review submission")}
+      <div class="review-summary">
+        <div>
+          <b>${esc(attempt.userEmail)}</b>
+          <div class="muted">${esc(attempt.courseTitle || "")} - ${esc(attempt.moduleTitle || "")}</div>
+        </div>
+        <div class="attempt-score">
+          <span class="badge ${statusBadgeClass(attempt.resultStatus)}">${esc(statusText(attempt.resultStatus))}</span>
+          <span>${esc(attempt.totalScore)} / ${esc(attempt.maxScore)} (${esc(attempt.scorePercent)}%)</span>
+        </div>
+      </div>
+      ${tasks.map(renderAttemptTask).join("")}
+      ${textArea("review_overall", "Overall review comment", attempt.reviewComment || "")}
+      <button class="btn" onclick="submitAssessmentReview('${esc(attempt.attemptId)}','${esc(attempt.assessmentBlockId)}')">Save review</button>
+      <div id="modalMsg"></div>
+    `);
+  } catch (e) {
+    showResult("assessment_result", e.message, "error");
+  }
+}
+
+function renderAttemptTask(task, index) {
+  const max = Number(task.points || 0);
+  const score = Number(task.score || 0);
+  return `
+    <section class="review-task" data-task-id="${esc(task.taskAttemptId)}">
+      <div class="review-task-head">
+        <div>
+          <b>${esc(index + 1)}. ${esc(task.title || task.assessmentTaskId)}</b>
+          <div class="muted">${esc(task.taskType)} - Max ${esc(max)} point(s)</div>
+        </div>
+        <span class="badge ${statusBadgeClass(task.validationStatus)}">${esc(statusText(task.validationStatus))}</span>
+      </div>
+      <div class="answer-box">${renderAttemptAnswer(task)}</div>
+      ${task.interpreterOutput ? `<pre class="review-output">${esc(task.interpreterOutput)}</pre>` : ""}
+      ${task.validationOutput ? `<pre class="review-output">${esc(task.validationOutput)}</pre>` : ""}
+      <div class="grid-3">
+        <div class="field">
+          <label>Score</label>
+          <input class="review-score" type="number" min="0" max="${esc(max)}" value="${esc(score)}">
+        </div>
+        ${selectField(`review_status_${task.taskAttemptId}`, "Status", [
+          { value: "passed", label: "Passed" },
+          { value: "failed", label: "Failed" },
+          { value: "pending_review", label: "Pending review" },
+          { value: "not_checked", label: "Not checked" }
+        ], task.validationStatus || "pending_review").replace("<select", "<select class=\"review-status\"")}
+        ${textField(`review_comment_${task.taskAttemptId}`, "Comment", task.reviewComment || "").replace("<input", "<input class=\"review-comment\"")}
+      </div>
+      ${task.reviewedBy ? `<div class="muted">Last reviewed by ${esc(task.reviewedBy)} ${esc(formatDate(task.reviewedAt))}</div>` : ""}
+    </section>
+  `;
+}
+
+function renderAttemptAnswer(task) {
+  const answer = parseJson(task.answerJson, {});
+  const config = parseJson(task.configJson, {});
+  if (task.taskType === "open_answer") {
+    return `<div class="answer-text">${esc(answer.text || "")}</div>`;
+  }
+  if (task.taskType === "quiz") {
+    const questions = config.questions || [];
+    if (!questions.length || !Array.isArray(answer.selectedAnswers)) {
+      return `<div class="muted">Correct answers saved: ${esc(answer.correct ?? 0)} / ${esc(answer.total ?? (questions.length || ""))}</div>`;
+    }
+    return questions.map((q, i) => {
+      const selected = answer.selectedAnswers[i] || [];
+      const selectedText = selected.map((idx) => q.options?.[idx] ?? idx).join(", ") || "No answer";
+      const correctText = (q.correctAnswers || []).map((idx) => q.options?.[idx] ?? idx).join(", ");
+      return `
+        <div class="review-question">
+          <b>${esc(q.question || `Question ${i + 1}`)}</b>
+          <div>Student: ${esc(selectedText)}</div>
+          <div class="muted">Correct: ${esc(correctText)}</div>
+        </div>
+      `;
+    }).join("");
+  }
+  if (task.taskType === "sql_task") {
+    return `<pre class="review-output">${esc(answer.query || JSON.stringify(answer, null, 2))}</pre>`;
+  }
+  if (task.taskType === "python_task") {
+    return `<pre class="review-output">${esc(answer.code || JSON.stringify(answer, null, 2))}</pre>`;
+  }
+  return `<pre class="review-output">${esc(JSON.stringify(answer, null, 2))}</pre>`;
+}
+
+async function submitAssessmentReview(attemptId, moduleId) {
+  try {
+    const taskReviews = [...document.querySelectorAll(".review-task")].map((row) => ({
+      taskAttemptId: row.dataset.taskId,
+      score: Number(row.querySelector(".review-score")?.value || 0),
+      validationStatus: row.querySelector(".review-status")?.value || "pending_review",
+      reviewComment: row.querySelector(".review-comment")?.value || ""
+    }));
+    const response = await api("/api/admin/assessment/review", "POST", {
+      token: state.adminToken,
+      attemptId,
+      taskReviews,
+      reviewComment: val("review_overall")
+    });
+    showResult("modalMsg", `Saved. New result: ${statusText(response.resultStatus)} (${response.scorePercent}%).`, "ok");
+    await load();
+    setTimeout(() => loadAssessmentAttempts(state.adminView === "control" ? state.controlModule : moduleId, "knowledge_attempts"), 0);
+  } catch (e) {
+    showResult("modalMsg", e.message, "error");
+  }
+}
+
+function statusText(status) {
+  return ({
+    pending_review: "Pending review",
+    passed: "Passed",
+    failed: "Failed",
+    not_checked: "Not checked",
+    error: "Error"
+  })[status] || status || "Unknown";
+}
+
+function statusBadgeClass(status) {
+  if (status === "passed") return "";
+  if (status === "failed" || status === "error") return "danger";
+  if (status === "pending_review") return "warn";
+  return "grey";
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function showResult(id, message, type) {
