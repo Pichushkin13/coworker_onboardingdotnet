@@ -566,6 +566,46 @@ dialog button:hover {
   margin: 12px 0;
 }
 
+.rest-choice-group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+  margin: 10px 0;
+}
+
+.rest-choice-group > b {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.decision-grid th,
+.decision-grid td {
+  vertical-align: top;
+}
+
+.decision-grid select {
+  min-width: 160px;
+}
+
+.impact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.impact-option {
+  margin-top: 0;
+  min-height: 78px;
+}
+
+.impact-option small {
+  display: block;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
 .option {
   display: flex;
   align-items: flex-start;
@@ -617,6 +657,39 @@ dialog input {
 
 .field textarea {
   min-height: 110px;
+}
+
+.evidence-form {
+  background: #f6faf6;
+}
+
+.evidence-locked {
+  background: #fff9ed;
+}
+
+.evidence-field {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.evidence-field textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+
+.expected-answer {
+  border: 1px dashed #9fb7a7;
+  border-radius: 8px;
+  background: #f8fbf4;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.expected-answer > b {
+  display: block;
+  margin-bottom: 8px;
 }
 
 .manual-input-hint {
@@ -972,6 +1045,65 @@ th {
   margin-bottom: 12px;
 }
 
+.level-summary {
+  border: 1px solid #b8c8bb;
+  border-radius: 8px;
+  background: #f8fbf4;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.level-summary > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.level-summary > div:first-child b {
+  font-size: 22px;
+}
+
+.level-explain {
+  border: 1px solid #d4dfd5;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+  margin-bottom: 10px;
+  color: #435048;
+}
+
+.level-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.level-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.level-card.passed {
+  border-color: #8ebd82;
+  background: #f1faee;
+}
+
+.level-card b,
+.level-card span,
+.level-card small {
+  display: block;
+}
+
+.level-card small {
+  color: var(--warn-ink);
+  margin-top: 3px;
+}
+
 .review-task {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1062,7 +1194,7 @@ th {
 }
 
 .answer-row {
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr 90px auto auto;
 }
 
 .answer-row input,
@@ -1122,11 +1254,17 @@ dialog > input {
 }
 
 .modal-head {
+  position: sticky;
+  top: -18px;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 12px;
+  margin: -18px -18px 12px;
+  padding: 18px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
 }
 
 .modal-head h3 {
@@ -1138,6 +1276,7 @@ dialog > input {
   color: var(--ink);
   font-size: 20px;
   padding: 5px 8px;
+  flex: 0 0 auto;
 }
 
 dialog::backdrop {
@@ -1155,6 +1294,7 @@ dialog::backdrop {
   .grid-2,
   .grid-3,
   .metric-grid,
+  .impact-grid,
   .pair-row,
   .answer-row {
     grid-template-columns: 1fr;

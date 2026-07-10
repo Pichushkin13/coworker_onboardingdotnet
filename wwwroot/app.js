@@ -18,7 +18,8 @@ let state = {
   adminView: localStorage.getItem("adminView") || "builder",
   controlModule: localStorage.getItem("controlModule") || "",
   restoreScrollPending: true,
-  scrollTimer: null
+  scrollTimer: null,
+  evidenceRefreshTimer: null
 };
 
 let SQL = null;
@@ -181,6 +182,19 @@ function collectDraftAnswer(activity) {
   }
   if (activity.activityType === "open_answer") {
     return { type: "open_answer", text: $(`open_${activity.activityId}`)?.value || "" };
+  }
+  if (activity.activityType === "experience_evidence") {
+    const responses = {};
+    (activity.config.prompts || []).forEach((prompt, i) => {
+      responses[prompt.id || `p${i + 1}`] = $(`evidence_${activity.activityId}_${i}`)?.value || "";
+    });
+    return { type: "experience_evidence", responses };
+  }
+  if (activity.activityType === "decision_table") {
+    return { type: "decision_table", answers: decisionTableAnswer(activity.activityId, activity.config.rows || []) };
+  }
+  if (activity.activityType === "impact_analysis") {
+    return { type: "impact_analysis", selected: checkedValues(`impact_${activity.activityId}`) };
   }
   if (activity.activityType === "sql_task") {
     const runtime = state.sqlRuntime[activity.activityId];
@@ -371,8 +385,10 @@ function renderInsertZone(moduleId, position) {
 }
 
 function renderBrick(activity, assessment) {
+  const body = renderActivity(activity, assessment);
+  const hidden = !state.adminToken && body.includes("data-evidence-hidden=\"true\"");
   return `
-    <div class="activity-unit activity-sort-row" id="brick_${esc(activity.activityId)}" data-activity-id="${esc(activity.activityId)}">
+    <div class="activity-unit activity-sort-row" id="brick_${esc(activity.activityId)}" data-activity-id="${esc(activity.activityId)}" ${hidden ? "hidden" : ""}>
       ${state.adminToken ? `
         <div class="brick-admin">
           <button class="sort-handle activity-handle" title="Drag to reorder" draggable="true">::</button>
@@ -381,7 +397,7 @@ function renderBrick(activity, assessment) {
         </div>
       ` : ""}
       <div class="brick">
-        <div class="brick-surface">${renderActivity(activity, assessment)}</div>
+        <div class="brick-surface">${body}</div>
       </div>
     </div>
   `;
@@ -396,11 +412,15 @@ function renderActivity(a, assessment) {
   if (a.activityType === "image") return renderImage(a);
   if (a.activityType === "video") return renderVideo(a);
   if (a.activityType === "practice_quiz" || a.activityType === "quiz") return renderQuiz(a, assessment);
-  if (a.activityType === "drag_mapping") return renderMapping(a);
-  if (a.activityType === "drag_order") return renderOrder(a);
+  if (a.activityType === "drag_mapping") return renderMapping(a, assessment);
+  if (a.activityType === "drag_order") return renderOrder(a, assessment);
+  if (a.activityType === "decision_table") return renderDecisionTable(a, assessment);
+  if (a.activityType === "impact_analysis") return renderImpactAnalysis(a, assessment);
   if (a.activityType === "sql_practice" || a.activityType === "sql_task") return renderSql(a, assessment);
   if (a.activityType === "python_practice" || a.activityType === "python_task") return renderPython(a, assessment);
   if (a.activityType === "open_answer") return renderOpenAnswer(a, assessment);
+  if (a.activityType === "experience_evidence") return renderExperienceEvidence(a, assessment);
+  if (a.activityType === "rest_contract") return renderRestContract(a, assessment);
   if (a.activityType === "assessment_block") return `<div class="result warn">Assessment block is represented by the module itself in this version.</div>`;
   return `<div class="result warn">Unsupported activity type: ${esc(a.activityType)}</div>`;
 }
@@ -441,6 +461,19 @@ function renderVideo(a) {
   `;
 }
 
+function quizOptionLabel(option) {
+  if (typeof option === "object" && option !== null) {
+    return option.label || option.text || option.value || "";
+  }
+  return option;
+}
+
+function quizOptionLevel(option) {
+  if (typeof option !== "object" || option === null) return null;
+  const level = Number(option.level ?? option.value);
+  return Number.isFinite(level) ? level : null;
+}
+
 function renderQuiz(a, assessment) {
   const questions = a.config.questions || [];
   return `
@@ -453,7 +486,7 @@ function renderQuiz(a, assessment) {
           ${(q.options || []).map((opt, j) => `
             <label class="option">
               <input type="${(q.correctAnswers || []).length > 1 ? "checkbox" : "radio"}" name="q_${esc(a.activityId)}_${i}" value="${j}">
-              <span>${esc(opt)}</span>
+              <span>${esc(quizOptionLabel(opt))}</span>
             </label>
           `).join("")}
         </div>
@@ -463,7 +496,7 @@ function renderQuiz(a, assessment) {
   `;
 }
 
-function renderMapping(a) {
+function renderMapping(a, assessment) {
   const cfg = a.config || {};
   const rightItems = shuffle(cfg.rightItems || []);
   return `
@@ -480,13 +513,12 @@ function renderMapping(a) {
           ${(cfg.leftItems || []).map((v) => `<b>${esc(v)}</b><div class="drop-zone mapping-zone" data-target="${esc(v)}"></div>`).join("")}
         </div>
       </div>
-      <button class="btn" onclick="checkMapping('${esc(a.activityId)}')">Check mapping</button>
-      <div id="result_${esc(a.activityId)}"></div>
+      ${!assessment ? `<button class="btn" onclick="checkMapping('${esc(a.activityId)}')">Check mapping</button><div id="result_${esc(a.activityId)}"></div>` : ""}
     </div>
   `;
 }
 
-function renderOrder(a) {
+function renderOrder(a, assessment) {
   const cfg = a.config || {};
   const steps = shuffle(cfg.steps || cfg.correctOrder || []);
   return `
@@ -500,8 +532,69 @@ function renderOrder(a) {
             <span>${esc(s)}</span>
           </div>`).join("")}
       </div>
-      <button class="btn" onclick="checkOrder('${esc(a.activityId)}')">Check order</button>
-      <div id="result_${esc(a.activityId)}"></div>
+      ${!assessment ? `<button class="btn" onclick="checkOrder('${esc(a.activityId)}')">Check order</button><div id="result_${esc(a.activityId)}"></div>` : ""}
+    </div>
+  `;
+}
+
+function renderDecisionTable(a, assessment) {
+  const cfg = a.config || {};
+  const rows = cfg.rows || [];
+  const outcomes = cfg.outcomes || [];
+  return `
+    <div class="task-card decision-table">
+      <h3>${esc(a.title || "Decision table")}</h3>
+      ${cfg.scenario ? `<div class="muted">${esc(cfg.scenario)}</div>` : ""}
+      <div class="sql-table-wrap">
+        <table class="decision-grid">
+          <thead>
+            <tr>
+              <th>Case</th>
+              ${(cfg.conditions || []).map((condition) => `<th>${esc(condition)}</th>`).join("")}
+              <th>Outcome</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row, i) => `
+              <tr>
+                <td>${esc(row.case || row.label || `Case ${i + 1}`)}</td>
+                ${(row.conditions || []).map((value) => `<td>${esc(value)}</td>`).join("")}
+                <td>
+                  <select id="dt_${esc(a.activityId)}_${i}">
+                    <option value="">Select...</option>
+                    ${outcomes.map((outcome) => `<option value="${esc(outcome)}">${esc(outcome)}</option>`).join("")}
+                  </select>
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+      ${!assessment ? `<button class="btn" onclick="checkDecisionTable('${esc(a.activityId)}')">Check table</button><div id="result_${esc(a.activityId)}"></div>` : ""}
+    </div>
+  `;
+}
+
+function renderImpactAnalysis(a, assessment) {
+  const cfg = a.config || {};
+  const areas = cfg.areas || [];
+  const id = esc(a.activityId);
+  return `
+    <div class="task-card impact-analysis">
+      <h3>${esc(a.title || "Impact analysis")}</h3>
+      ${cfg.scenario ? `<div class="muted">${esc(cfg.scenario)}</div>` : ""}
+      <div class="impact-grid">
+        ${areas.map((area) => `
+          <label class="option impact-option">
+            <input type="checkbox" name="impact_${id}" value="${esc(area.id || area.label || area)}">
+            <span>
+              <b>${esc(area.label || area.id || area)}</b>
+              ${area.description ? `<small>${esc(area.description)}</small>` : ""}
+            </span>
+          </label>
+        `).join("")}
+      </div>
+      ${!assessment ? `<button class="btn" onclick="checkImpactAnalysis('${id}')">Check impacts</button><div id="result_${id}"></div>` : ""}
     </div>
   `;
 }
@@ -519,6 +612,7 @@ function renderSql(a, assessment) {
     <div class="task-card">
       <h3>${esc(a.title || "SQL task")}</h3>
       <div class="muted">${esc(a.config.instructions || a.content || "")}</div>
+      ${state.adminToken ? renderSqlExpected(a.config.validation || a.validation || {}) : ""}
       <div class="sql-controls">
         <button class="btn ghost small" id="db_btn_${esc(a.activityId)}" onclick="toggleTables('${esc(a.activityId)}','${esc(a.config.databaseSchemaId || "")}')">View demo tables</button>
       </div>
@@ -559,9 +653,259 @@ function renderOpenAnswer(a, assessment) {
   `;
 }
 
+function renderSqlExpected(validation) {
+  const columns = validation.expectedColumns || [];
+  const rows = validation.expectedRows || [];
+  return `
+    <div class="expected-answer">
+      <b>Expected result</b>
+      <div class="muted">Columns: ${esc(columns.join(", ") || "Not configured")}</div>
+      ${rows.length ? tableHtml({ columns, rows }) : `<div class="muted">Rows are not configured.</div>`}
+    </div>
+  `;
+}
+
+function renderExperienceEvidence(a, assessment) {
+  if (assessment && !state.adminToken) {
+    const gate = evidenceGateStatus(a);
+    if (!gate.unlocked) {
+      return `<div data-evidence-activity="${esc(a.activityId)}" data-evidence-hidden="true"></div>`;
+    }
+  }
+  const prompts = a.config.prompts || defaultEvidencePrompts();
+  const min = Number(a.config.minLength || 60);
+  return `
+    <div class="task-card evidence-form" data-evidence-activity="${esc(a.activityId)}">
+      <h3>${esc(a.title || "Experience evidence")}</h3>
+      ${a.content || a.config.instructions ? `<div class="muted">${esc(a.content || a.config.instructions)}</div>` : ""}
+      ${prompts.map((prompt, i) => `
+        <div class="field evidence-field">
+          <label>${esc(prompt.label || prompt.question || `Evidence ${i + 1}`)}</label>
+          ${prompt.hint ? `<div class="muted">${esc(prompt.hint)}</div>` : ""}
+          <textarea id="evidence_${esc(a.activityId)}_${i}" placeholder="${esc(prompt.placeholder || "Describe a concrete example, your role, artifacts, stakeholders, and result.")}"${manualInputAttrs(assessment)}></textarea>
+        </div>
+      `).join("")}
+      <div class="manual-input-hint">${assessment && !state.adminToken ? `Each field should be typed manually. Minimum recommended length: ${esc(min)} characters.` : "Reviewer uses this evidence to confirm senior levels."}</div>
+    </div>
+  `;
+}
+
+function defaultEvidencePrompts() {
+  return [
+    { id: "domain", label: "Relevant BA experience and domain", hint: "Mention domain, product/process area, team size, and your BA role." },
+    { id: "complex_case", label: "Complex requirement or delivery case", hint: "Describe the problem, stakeholders, constraints, your actions, and measurable outcome." },
+    { id: "artifacts", label: "Artifacts you personally produced", hint: "Examples: user stories, BPMN, decision tables, API contract, impact analysis, backlog refinement package." },
+    { id: "mentorship", label: "Mentorship, ownership, or standards", hint: "For L4-L5: describe mentoring, review, standards, governance, or cross-team ownership." }
+  ];
+}
+
+function evidenceGateStatus(activity) {
+  const gate = activity.config.unlock || activity.config.gate || null;
+  if (!gate || gate.enabled === false) return { unlocked: true, completed: true, percent: 100, requiredPercent: 0, earned: 0, max: 0 };
+  const requiredPercent = Number(gate.minAutoScorePercent ?? gate.minPercent ?? 80);
+  const score = automaticScoreBeforeActivity(activity);
+  const completed = automaticTasksBeforeActivity(activity).every(isAutomaticTaskComplete);
+  const percent = score.max ? Math.round(score.earned * 100 / score.max) : 0;
+  return {
+    unlocked: completed && score.max > 0 && percent >= requiredPercent,
+    completed,
+    percent,
+    requiredPercent,
+    earned: score.earned,
+    max: score.max
+  };
+}
+
+function automaticTasksBeforeActivity(activity) {
+  const autoTypes = new Set(["quiz", "drag_mapping", "drag_order", "decision_table", "impact_analysis", "rest_contract", "sql_task", "python_task"]);
+  return activities(activity.moduleId)
+    .filter((item) => autoTypes.has(item.activityType) && Number(item.displayOrder || 0) < Number(activity.displayOrder || 0));
+}
+
+function automaticScoreBeforeActivity(activity) {
+  const rows = automaticTasksBeforeActivity(activity);
+  return rows.reduce((sum, item) => {
+    const points = Number(item.points || 0);
+    const ratio = automaticScoreRatio(item);
+    sum.earned += Math.round(points * ratio);
+    sum.max += points;
+    return sum;
+  }, { earned: 0, max: 0 });
+}
+
+function isAutomaticTaskComplete(activity) {
+  if (activity.activityType === "quiz") {
+    const questions = activity.config.questions || [];
+    return questions.length > 0 && questions.every((q, i) => document.querySelectorAll(`[name="q_${css(activity.activityId)}_${i}"]:checked`).length > 0);
+  }
+  if (activity.activityType === "drag_mapping") {
+    const expected = Object.keys(activity.config.correctMapping || {});
+    const answer = mappingAnswer(activity.activityId);
+    return expected.length > 0 && expected.every((key) => !!answer[key]);
+  }
+  if (activity.activityType === "drag_order") {
+    return orderAnswer(activity.activityId).length === (activity.config.correctOrder || []).length;
+  }
+  if (activity.activityType === "decision_table") {
+    const rows = activity.config.rows || [];
+    const answer = decisionTableAnswer(activity.activityId, rows);
+    return rows.length > 0 && rows.every((row, i) => !!answer[row.id || `r${i + 1}`]);
+  }
+  if (activity.activityType === "impact_analysis") {
+    return checkedValues(`impact_${activity.activityId}`).length > 0;
+  }
+  if (activity.activityType === "rest_contract") {
+    const answer = restContractAnswer(activity.activityId);
+    return !!answer.method && !!answer.path && !!answer.requestBody && !!answer.successStatus;
+  }
+  if (activity.activityType === "sql_task") return !!state.sqlRuntime[activity.activityId];
+  if (activity.activityType === "python_task") return !!state.pythonRuntime[activity.activityId];
+  return false;
+}
+
+function automaticScoreRatio(activity) {
+  if (activity.activityType === "quiz") {
+    const questions = activity.config.questions || [];
+    const correct = questions.filter((q, i) => {
+      const selected = [...document.querySelectorAll(`[name="q_${css(activity.activityId)}_${i}"]:checked`)].map((n) => Number(n.value)).sort();
+      return JSON.stringify(selected) === JSON.stringify((q.correctAnswers || []).slice().sort());
+    }).length;
+    return questions.length ? correct / questions.length : 0;
+  }
+  if (activity.activityType === "drag_mapping") return evaluateMapping(activity).scoreRatio;
+  if (activity.activityType === "drag_order") return evaluateOrder(activity).scoreRatio;
+  if (activity.activityType === "decision_table") return evaluateDecisionTable(activity).scoreRatio;
+  if (activity.activityType === "impact_analysis") return evaluateImpactAnalysis(activity).scoreRatio;
+  if (activity.activityType === "rest_contract") return evaluateRestContract(activity).scoreRatio;
+  if (activity.activityType === "sql_task") return state.sqlRuntime[activity.activityId]?.validationStatus === "passed" ? 1 : 0;
+  if (activity.activityType === "python_task") return state.pythonRuntime[activity.activityId]?.validationStatus === "passed" ? 1 : 0;
+  return 0;
+}
+
+function refreshConditionalEvidence(force = false) {
+  if (state.adminToken) return;
+  activities(state.selectedModule).filter((activity) => activity.activityType === "experience_evidence").forEach((activity) => {
+    const brick = document.querySelector(`#brick_${css(activity.activityId)}`);
+    const surface = brick?.querySelector(".brick-surface");
+    if (!surface) return;
+    const currentlyHidden = !!surface.querySelector("[data-evidence-hidden='true']");
+    const gate = evidenceGateStatus(activity);
+    if (force || currentlyHidden || !gate.unlocked) {
+      const html = renderExperienceEvidence(activity, true);
+      surface.innerHTML = html;
+      brick.hidden = html.includes("data-evidence-hidden=\"true\"");
+      initManualInputOnly();
+      initDraftListeners();
+      applyDrafts(activity.moduleId);
+    }
+  });
+}
+
+function scheduleEvidenceRefresh() {
+  clearTimeout(state.evidenceRefreshTimer);
+  state.evidenceRefreshTimer = setTimeout(() => refreshConditionalEvidence(false), 120);
+}
+
+function renderRestContract(a, assessment) {
+  const cfg = a.config || {};
+  const validation = a.validation || cfg.validation || {};
+  const methods = cfg.methodOptions || ["GET", "POST", "PUT", "PATCH", "DELETE"];
+  const paths = cfg.pathOptions || [validation.path || "/api/resource"];
+  const pathParams = cfg.pathParamOptions || validation.pathParams || [];
+  const queryParams = cfg.queryParamOptions || validation.queryParams || [];
+  const requestBodies = cfg.requestBodyOptions || ["none", "json"];
+  const successStatuses = cfg.successStatusOptions || [200, 201, 204];
+  const errorStatuses = cfg.errorStatusOptions || [400, 401, 403, 404, 409, 422, 500];
+  const responseFields = cfg.responseFieldOptions || validation.responseFields || [];
+  const id = esc(a.activityId);
+  return `
+    <div class="task-card rest-contract">
+      <h3>${esc(a.title || "REST Contract Builder")}</h3>
+      ${cfg.scenario ? `<div class="muted">${esc(cfg.scenario)}</div>` : ""}
+      <div class="grid-2">
+        <div class="field">
+          <label>HTTP method</label>
+          <select id="rest_method_${id}">${methods.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("")}</select>
+        </div>
+        <div class="field">
+          <label>Endpoint path</label>
+          <select id="rest_path_${id}">${paths.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("")}</select>
+        </div>
+      </div>
+      <div class="grid-2">
+        ${restChecklist(id, "path_params", "Path parameters", pathParams, (item) => item)}
+        ${restChecklist(id, "query_params", "Query parameters", queryParams, queryLabel)}
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <label>Request body</label>
+          <select id="rest_body_${id}">${requestBodies.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join("")}</select>
+        </div>
+        <div class="field">
+          <label>Success status</label>
+          <select id="rest_success_${id}">${successStatuses.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("")}</select>
+        </div>
+      </div>
+      <div class="grid-2">
+        ${restChecklist(id, "error_statuses", "Error statuses", errorStatuses, (item) => item)}
+        ${restChecklist(id, "response_fields", "Response fields", responseFields, (item) => item)}
+      </div>
+      ${state.adminToken ? renderRestExpected(validation) : ""}
+      ${!assessment ? `<button class="btn" onclick="checkRestContract('${id}')">Check contract</button><div id="result_${id}"></div>` : ""}
+    </div>
+  `;
+}
+
+function renderRestExpected(validation) {
+  return `
+    <div class="expected-answer">
+      <b>Expected REST contract</b>
+      <div class="grid-2">
+        <div><span class="muted">Method</span><br>${esc(validation.method || "")}</div>
+        <div><span class="muted">Path</span><br>${esc(validation.path || "")}</div>
+        <div><span class="muted">Path params</span><br>${esc((validation.pathParams || []).join(", ") || "None")}</div>
+        <div><span class="muted">Query params</span><br>${esc(normalizeQueryParams(validation.queryParams || []).join(", ") || "None")}</div>
+        <div><span class="muted">Request body</span><br>${esc(validation.requestBody || "none")}</div>
+        <div><span class="muted">Success status</span><br>${esc(validation.successStatus || "")}</div>
+        <div><span class="muted">Error statuses</span><br>${esc((validation.errorStatuses || []).join(", ") || "None")}</div>
+        <div><span class="muted">Response fields</span><br>${esc((validation.responseFields || []).join(", ") || "None")}</div>
+      </div>
+    </div>
+  `;
+}
+
+function restChecklist(activityId, group, label, items, labeler) {
+  return `
+    <div class="rest-choice-group">
+      <b>${esc(label)}</b>
+      ${(items || []).map((item, i) => {
+        const value = restOptionValue(item);
+        return `
+          <label class="option">
+            <input type="checkbox" name="rest_${group}_${activityId}" value="${esc(value)}">
+            <span>${esc(labeler(item, i))}</span>
+          </label>
+        `;
+      }).join("") || `<div class="muted">No options configured.</div>`}
+    </div>
+  `;
+}
+
+function queryLabel(item) {
+  if (typeof item === "string") return item;
+  return `${item.name || ""}${item.value !== undefined && item.value !== "" ? `=${item.value}` : ""}`;
+}
+
+function restOptionValue(item) {
+  if (typeof item === "object" && item !== null) return queryLabel(item);
+  return String(item ?? "");
+}
+
 function renderAssessmentModule(module, tasks) {
   const progress = getProgress(module.moduleId);
   const timed = truthy(module.isTimed);
+  const placement = module.reviewMode === "placement";
+  const leveling = module.reviewMode === "leveling";
   const activeAttempt = progress && progress.activeAttempt;
   const canSubmit = !progress || progress.canSubmit;
   const attemptsText = `${progress ? progress.attemptsUsed : 0} / ${progress ? progress.effectiveMaxAttempts : (module.maxAttempts || 1)}`;
@@ -588,13 +932,19 @@ function renderAssessmentModule(module, tasks) {
     <div class="assessment">
       <div class="assessment-intro">
         <h3>${esc(module.title)}</h3>
-        <div class="muted">One submit consumes one attempt. Passing score: ${esc(module.passingScore || 0)}%.</div>
+        <div class="muted">${placement
+          ? "Choose the option that best matches the respondent's current behavior. The system will recommend a level automatically."
+          : leveling
+            ? "Complete the skill checks. The system will calculate the highest confirmed level and show which level is not yet confirmed."
+          : `One submit consumes one attempt. Passing score: ${esc(module.passingScore || 0)}%.`}</div>
         <div class="badge grey">Attempts: ${esc(attemptsText)}</div>
+        ${placement ? `<div class="badge grey">Placement assessment</div>` : ""}
+        ${leveling ? `<div class="badge grey">Level assessment</div>` : ""}
         ${timed && activeAttempt && !state.adminToken ? `<div class="assessment-timer"><span>Time remaining</span><span class="timer-value" id="assessment_timer">--:--</span></div>` : ""}
         ${timed && state.adminToken ? `<div class="badge grey">Timed: ${esc(module.timeLimitMinutes || 1)} min (admin preview)</div>` : ""}
       </div>
       ${renderActivityList(module, visibleTasks, true)}
-      ${!state.adminToken ? `<button class="btn" ${canSubmit ? "" : "disabled"} onclick="submitAssessment('${esc(module.moduleId)}', false)">Submit assessment module</button><div id="assessment_result"></div>` : ""}
+      ${!state.adminToken ? `<button class="btn" ${canSubmit ? "" : "disabled"} onclick="submitAssessment('${esc(module.moduleId)}', false)">${placement ? "Submit placement assessment" : leveling ? "Submit level assessment" : "Submit assessment module"}</button><div id="assessment_result"></div>` : ""}
     </div>
   `;
 
@@ -631,6 +981,17 @@ function assessmentModules() {
 
 function renderControlSidebar() {
   const assessments = assessmentModules();
+  const levelAssessments = assessments.filter((m) => m.reviewMode === "leveling");
+  const regularAssessments = assessments.filter((m) => m.reviewMode !== "leveling");
+  const moduleButton = (m) => {
+    const course = state.data.courses.find((c) => c.courseId === m.courseId);
+    return `
+      <button class="nav-card ${state.controlModule === m.moduleId ? "active" : ""}" onclick="selectControlModule('${esc(m.moduleId)}')">
+        <b>${esc(m.title)}</b>
+        <span>${esc(course?.title || m.courseId)}</span>
+      </button>
+    `;
+  };
   $("courses").innerHTML = `
     ${renderAdminTabs()}
     <div class="side-head">Assessment modules</div>
@@ -639,16 +1000,9 @@ function renderControlSidebar() {
         <b>Все модули</b>
         <span>Общая аналитика и контроль</span>
       </button>
-      ${assessments.map((m) => {
-        const course = state.data.courses.find((c) => c.courseId === m.courseId);
-        return `
-          <button class="nav-card ${state.controlModule === m.moduleId ? "active" : ""}" onclick="selectControlModule('${esc(m.moduleId)}')">
-            <b>${esc(m.title)}</b>
-            <span>${esc(course?.title || m.courseId)}</span>
-          </button>
-        `;
-      }).join("")}
     </div>
+    ${levelAssessments.length ? `<div class="side-head">Level assessments</div><div class="nav-list">${levelAssessments.map(moduleButton).join("")}</div>` : ""}
+    ${regularAssessments.length ? `<div class="side-head">Regular assessments</div><div class="nav-list">${regularAssessments.map(moduleButton).join("")}</div>` : ""}
   `;
 }
 
@@ -706,7 +1060,14 @@ function initInteractiveActivities() {
   document.querySelectorAll(".order-list").forEach((list) => initOrderDrag(list));
   initDraftListeners();
   initManualInputOnly();
+  initEvidenceRefreshInputs();
   refreshOrderNumbers();
+}
+
+function initEvidenceRefreshInputs() {
+  document.querySelectorAll("input[name^='rest_'], select[id^='rest_'], select[id^='dt_'], input[name^='impact_'], input[name^='q_']").forEach((input) => {
+    input.addEventListener("change", scheduleEvidenceRefresh);
+  });
 }
 
 function initManualInputOnly() {
@@ -747,6 +1108,20 @@ function initDraftListeners() {
     } else if (activity.activityType === "open_answer") {
       const input = $(`open_${activity.activityId}`);
       if (input) input.oninput = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+    } else if (activity.activityType === "experience_evidence") {
+      (activity.config.prompts || defaultEvidencePrompts()).forEach((prompt, i) => {
+        const input = $(`evidence_${activity.activityId}_${i}`);
+        if (input) input.oninput = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+      });
+    } else if (activity.activityType === "decision_table") {
+      (activity.config.rows || []).forEach((row, i) => {
+        const input = $(`dt_${activity.activityId}_${i}`);
+        if (input) input.onchange = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+      });
+    } else if (activity.activityType === "impact_analysis") {
+      document.querySelectorAll(`[name="impact_${css(activity.activityId)}"]`).forEach((input) => {
+        input.onchange = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+      });
     } else if (activity.activityType === "sql_task") {
       const input = $(`sql_${activity.activityId}`);
       if (input) input.oninput = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
@@ -768,6 +1143,22 @@ function applyDrafts(moduleId) {
     } else if (activity.activityType === "open_answer") {
       const input = $(`open_${activity.activityId}`);
       if (input && draft.text) input.value = draft.text;
+    } else if (activity.activityType === "experience_evidence") {
+      (activity.config.prompts || defaultEvidencePrompts()).forEach((prompt, i) => {
+        const input = $(`evidence_${activity.activityId}_${i}`);
+        const key = prompt.id || `p${i + 1}`;
+        if (input && draft.responses?.[key]) input.value = draft.responses[key];
+      });
+    } else if (activity.activityType === "decision_table") {
+      (activity.config.rows || []).forEach((row, i) => {
+        const input = $(`dt_${activity.activityId}_${i}`);
+        const key = row.id || `r${i + 1}`;
+        if (input && draft.answers?.[key]) input.value = draft.answers[key];
+      });
+    } else if (activity.activityType === "impact_analysis") {
+      document.querySelectorAll(`[name="impact_${css(activity.activityId)}"]`).forEach((input) => {
+        input.checked = (draft.selected || []).includes(input.value);
+      });
     } else if (activity.activityType === "sql_task") {
       const input = $(`sql_${activity.activityId}`);
       if (input && draft.query) input.value = draft.query;
@@ -803,6 +1194,7 @@ function initMappingDrag(container) {
         if (existing && existing !== state.dragItem) container.querySelector(".pool")?.appendChild(existing);
       }
       zone.appendChild(state.dragItem);
+      scheduleEvidenceRefresh();
     };
   });
 }
@@ -817,6 +1209,7 @@ function initOrderDrag(list) {
       item.classList.remove("dragging");
       state.dragItem = null;
       refreshOrderNumbers();
+      scheduleEvidenceRefresh();
     };
   });
   list.ondragover = (event) => {
@@ -861,23 +1254,378 @@ async function checkPractice(id) {
   }).catch(() => {});
 }
 
+async function checkRestContract(id) {
+  const a = findActivity(id);
+  const result = evaluateRestContract(a);
+  showResult(`result_${id}`, `Result: ${result.correct} / ${result.total}.`, result.passed ? "ok" : "warn");
+  await api("/api/learning-event", "POST", {
+    courseId: a.courseId,
+    activityId: a.activityId,
+    activityType: a.activityType,
+    answer: result.answer,
+    isCorrect: result.passed,
+    feedback: `Result: ${result.correct} / ${result.total}`
+  }).catch(() => {});
+}
+
+function evaluateMapping(a) {
+  const expected = a.config.correctMapping || {};
+  const answer = mappingAnswer(a.activityId);
+  const keys = Object.keys(expected);
+  const correct = keys.filter((key) => answer[key] === expected[key]).length;
+  return {
+    answer,
+    correct,
+    total: keys.length,
+    passed: keys.length > 0 && correct === keys.length,
+    scoreRatio: keys.length ? correct / keys.length : 0
+  };
+}
+
+function mappingAnswer(activityId) {
+  const answer = {};
+  document.querySelectorAll(`#brick_${css(activityId)} .mapping-zone`).forEach((zone) => {
+    const item = zone.querySelector(".drag-item");
+    answer[zone.dataset.target] = item?.dataset.value || "";
+  });
+  return answer;
+}
+
+function evaluateOrder(a) {
+  const expected = a.config.correctOrder || [];
+  const answer = orderAnswer(a.activityId);
+  const correct = expected.filter((step, i) => answer[i] === step).length;
+  return {
+    answer,
+    correct,
+    total: expected.length,
+    passed: expected.length > 0 && correct === expected.length,
+    scoreRatio: expected.length ? correct / expected.length : 0
+  };
+}
+
+function orderAnswer(activityId) {
+  return [...document.querySelectorAll(`#order_${css(activityId)} .drag-item`)].map((item) => item.dataset.value);
+}
+
+function evaluateDecisionTable(a) {
+  const rows = a.config.rows || [];
+  const answer = decisionTableAnswer(a.activityId, rows);
+  const correct = rows.filter((row, i) => answer[row.id || `r${i + 1}`] === row.correctOutcome).length;
+  return {
+    answer,
+    correct,
+    total: rows.length,
+    passed: rows.length > 0 && correct === rows.length,
+    scoreRatio: rows.length ? correct / rows.length : 0
+  };
+}
+
+function decisionTableAnswer(activityId, rows) {
+  const answer = {};
+  (rows || []).forEach((row, i) => {
+    answer[row.id || `r${i + 1}`] = $(`dt_${activityId}_${i}`)?.value || "";
+  });
+  return answer;
+}
+
+function evaluateImpactAnalysis(a) {
+  const areas = a.config.areas || [];
+  const expected = a.validation?.correctImpacts || a.config.correctImpacts || [];
+  const selected = checkedValues(`impact_${a.activityId}`);
+  const total = areas.length || expected.length;
+  const correct = (areas.length ? areas.map((area) => area.id || area.label || area) : expected)
+    .filter((id) => selected.includes(id) === expected.includes(id)).length;
+  const threshold = Number(a.config.threshold || 0.8);
+  const ratio = total ? correct / total : 0;
+  return {
+    answer: { selected },
+    correct,
+    total,
+    passed: total > 0 && ratio >= threshold,
+    scoreRatio: ratio
+  };
+}
+
+function evaluateRestContract(a) {
+  const answer = restContractAnswer(a.activityId);
+  const expected = a.validation || a.config.validation || {};
+  const checks = [
+    sameValue(answer.method, expected.method),
+    sameValue(answer.path, expected.path),
+    sameSet(answer.pathParams, expected.pathParams || []),
+    sameSet(answer.queryParams, normalizeQueryParams(expected.queryParams || [])),
+    sameValue(answer.requestBody, expected.requestBody || "none"),
+    sameValue(String(answer.successStatus || ""), String(expected.successStatus || "")),
+    sameSet(answer.errorStatuses.map(String), (expected.errorStatuses || []).map(String)),
+    sameSet(answer.responseFields, expected.responseFields || [])
+  ];
+  const correct = checks.filter(Boolean).length;
+  return {
+    answer,
+    correct,
+    total: checks.length,
+    passed: correct === checks.length,
+    scoreRatio: checks.length ? correct / checks.length : 0
+  };
+}
+
+function restContractAnswer(activityId) {
+  return {
+    method: $(`rest_method_${activityId}`)?.value || "",
+    path: $(`rest_path_${activityId}`)?.value || "",
+    pathParams: checkedValues(`rest_path_params_${activityId}`),
+    queryParams: checkedValues(`rest_query_params_${activityId}`),
+    requestBody: $(`rest_body_${activityId}`)?.value || "",
+    successStatus: Number($(`rest_success_${activityId}`)?.value || 0),
+    errorStatuses: checkedValues(`rest_error_statuses_${activityId}`).map(Number),
+    responseFields: checkedValues(`rest_response_fields_${activityId}`)
+  };
+}
+
+function checkedValues(name) {
+  return [...document.querySelectorAll(`[name="${css(name)}"]:checked`)].map((input) => input.value);
+}
+
+function sameValue(actual, expected) {
+  return String(actual ?? "").trim() === String(expected ?? "").trim();
+}
+
+function sameSet(actual, expected) {
+  const a = (actual || []).map((x) => String(x)).sort();
+  const b = (expected || []).map((x) => String(x)).sort();
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function normalizeQueryParams(items) {
+  return (items || []).map(restOptionValue);
+}
+
+function isPlacementModule(moduleId) {
+  const module = state.data?.modules?.find((m) => m.moduleId === moduleId);
+  return module?.reviewMode === "placement";
+}
+
+function isLevelingModule(moduleId) {
+  const module = state.data?.modules?.find((m) => m.moduleId === moduleId);
+  return module?.reviewMode === "leveling";
+}
+
+function placementLevelLabel(level) {
+  return ({
+    0: "Below Level 1 / not confirmed",
+    1: "Awareness",
+    2: "Assisted practice",
+    3: "Independent delivery",
+    4: "Advanced ownership",
+    5: "Expert leadership"
+  })[level] || "Not enough data";
+}
+
+function buildLevelingResult(entries) {
+  const threshold = 0.7;
+  const stats = [1, 2, 3, 4].map((level) => {
+    const items = entries.filter((entry) => entry.level === level);
+    const score = items.reduce((sum, item) => sum + Number(item.score || 0), 0);
+    const max = items.reduce((sum, item) => sum + Number(item.points || 0), 0);
+    const pending = items.filter((item) => item.status === "pending_review").length;
+    const ratio = max ? score / max : 0;
+    const required = max ? Math.ceil(max * threshold) : 0;
+    return {
+      level,
+      score,
+      max,
+      required,
+      pending,
+      percent: max ? Math.round(ratio * 100) : 0,
+      ratio: Number(ratio.toFixed(2)),
+      passed: max > 0 && ratio >= threshold && pending === 0,
+      items
+    };
+  });
+  let confirmedLevel = 0;
+  for (const stat of stats) {
+    if (!stat.passed) break;
+    confirmedLevel = stat.level;
+  }
+  const blocked = stats.find((stat) => stat.max > 0 && !stat.passed);
+  const pendingLevels = stats.filter((stat) => stat.pending > 0).map((stat) => stat.level);
+  const strongest = stats.filter((stat) => stat.max > 0).slice().sort((a, b) => b.percent - a.percent)[0];
+  const summary = blocked
+    ? `Level ${blocked.level} is not confirmed yet: ${blocked.score}/${blocked.max} (${blocked.percent}%) scored, ${blocked.required}/${blocked.max} required. Higher-level scores are shown as strengths, but the confirmed level can only move upward after previous levels are confirmed.`
+    : `All configured levels are confirmed.`;
+  return {
+    mode: "multi_skill",
+    confirmedLevel,
+    label: placementLevelLabel(confirmedLevel),
+    threshold,
+    stats,
+    blockedLevel: blocked?.level || 0,
+    blocked,
+    strongest,
+    pendingLevels,
+    summary
+  };
+}
+
+function levelBandForActivity(activity) {
+  const cfg = activity.config || parseJson(activity.configJson, {});
+  if (Number(cfg.levelBand || 0)) return Number(cfg.levelBand);
+  const title = String(activity.title || "").toLowerCase();
+  if (title.includes("traceability") || title.includes("mapping")) return 1;
+  if (title.includes("discovery to delivery") || title.includes("process order")) return 2;
+  if (title.includes("decision table") || title.includes("rest contract") || title.includes("sql data")) return 3;
+  if (title.includes("impact analysis") || title.includes("open case")) return 4;
+  if (title.includes("experience evidence")) return 5;
+  return 1;
+}
+
+function levelingEntriesFromResults(moduleId, results) {
+  const byId = new Map(results.map((result) => [result.activityId, result]));
+  return activities(moduleId)
+    .filter((activity) => activity.activityType !== "assessment_block" && activity.activityType !== "experience_evidence")
+    .map((activity) => {
+      const result = byId.get(activity.activityId) || {};
+      return {
+        title: activity.title || activity.activityId,
+        type: activity.activityType,
+        level: levelBandForActivity(activity),
+        score: Number(result.score || 0),
+        points: Number(activity.points || 0),
+        status: result.validationStatus || "not_checked"
+      };
+    });
+}
+
+function levelingEntriesFromAttemptTasks(tasks) {
+  return (tasks || [])
+    .filter((task) => task.taskType !== "experience_evidence")
+    .map((task) => ({
+      title: task.title || task.assessmentTaskId,
+      type: task.taskType,
+      level: levelBandForActivity(task),
+      score: Number(task.score || 0),
+      points: Number(task.points || 0),
+      status: task.validationStatus || "not_checked"
+    }));
+}
+
+function renderLevelingSummary(result) {
+  if (!result) return "";
+  const title = result.confirmedLevel ? `Level ${result.confirmedLevel} confirmed` : "Level is not confirmed yet";
+  const subtitle = result.confirmedLevel
+    ? `${result.label}. The next level requires passing the next skill band.`
+    : result.blocked
+      ? `First blocking point: L${result.blocked.level} needs ${result.blocked.required}/${result.blocked.max}; current result is ${result.blocked.score}/${result.blocked.max}.`
+      : result.label;
+  return `
+    <div class="level-summary">
+      <div>
+        <b>${esc(title)}</b>
+        <span>${esc(subtitle)}</span>
+      </div>
+      <div class="level-explain">${esc(result.summary)}</div>
+      <div class="level-grid">
+        ${result.stats.map((stat) => `
+          <div class="level-card ${stat.passed ? "passed" : ""}">
+            <b>L${esc(stat.level)}</b>
+            <span>${esc(stat.score)} / ${esc(stat.max)} (${esc(stat.percent)}%)</span>
+            <small>Required: ${esc(stat.required)} / ${esc(stat.max)}</small>
+            ${stat.pending ? `<small>${esc(stat.pending)} pending review</small>` : ""}
+          </div>
+        `).join("")}
+      </div>
+      ${result.strongest && result.strongest.percent > 0 ? `<div class="muted">Strongest current band: L${esc(result.strongest.level)} with ${esc(result.strongest.percent)}%.</div>` : ""}
+    </div>
+  `;
+}
+
+function buildPlacementResult(results) {
+  const questionResults = results.flatMap((result) => result.answer?.questionResults || []);
+  const difficultyItems = questionResults.filter((item) => item.questionLevel !== undefined && item.correct !== undefined);
+  if (difficultyItems.length) {
+    const threshold = 0.7;
+    const stats = [1, 2, 3, 4, 5].map((level) => {
+      const items = difficultyItems.filter((item) => Number(item.questionLevel) === level);
+      const correct = items.filter((item) => item.correct).length;
+      const ratio = items.length ? correct / items.length : 0;
+      return { level, correct, total: items.length, ratio: Number(ratio.toFixed(2)), passed: items.length > 0 && ratio >= threshold };
+    });
+    let recommendedLevel = 0;
+    for (const item of stats) {
+      if (!item.total || !item.passed) break;
+      recommendedLevel = item.level;
+    }
+    const totalCorrect = difficultyItems.filter((item) => item.correct).length;
+    const totalQuestions = difficultyItems.length;
+    const summary = `Recommended level: ${recommendedLevel ? `Level ${recommendedLevel}` : "Below Level 1"} (${placementLevelLabel(recommendedLevel)}). Evidence by difficulty: ${stats.map((s) => `L${s.level}: ${s.correct}/${s.total}`).join(", ")}. Threshold: ${Math.round(threshold * 100)}% on the level and all previous levels.`;
+    return {
+      mode: "difficulty",
+      recommendedLevel,
+      label: placementLevelLabel(recommendedLevel),
+      averageLevel: recommendedLevel,
+      totalCorrect,
+      totalQuestions,
+      threshold,
+      stats,
+      details: difficultyItems,
+      summary
+    };
+  }
+
+  const levels = [];
+  const details = [];
+  questionResults.forEach((item) => {
+    const itemLevels = (item.selectedLevels || []).map(Number).filter(Number.isFinite);
+    itemLevels.forEach((level) => levels.push(level));
+    if (itemLevels.length) {
+      const avg = itemLevels.reduce((sum, level) => sum + level, 0) / itemLevels.length;
+      details.push({
+        question: item.question,
+        level: Math.round(avg),
+        labels: item.selectedLabels || []
+      });
+    }
+  });
+  const averageLevel = levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : 1;
+  const recommendedLevel = Math.max(1, Math.min(5, Math.round(averageLevel)));
+  const counts = [1, 2, 3, 4, 5].map((level) => ({
+    level,
+    count: levels.filter((value) => Math.round(value) === level).length
+  }));
+  const summary = `Recommended level: Level ${recommendedLevel} (${placementLevelLabel(recommendedLevel)}). Average level: ${averageLevel.toFixed(2)}. Answers by level: ${counts.map((c) => `L${c.level}: ${c.count}`).join(", ")}.`;
+  return {
+    recommendedLevel,
+    label: placementLevelLabel(recommendedLevel),
+    averageLevel: Number(averageLevel.toFixed(2)),
+    counts,
+    details,
+    summary
+  };
+}
+
 function checkMapping(id) {
   const a = findActivity(id);
-  const expected = a.config.correctMapping || {};
-  let ok = 0;
-  document.querySelectorAll(`#brick_${css(id)} .mapping-zone`).forEach((zone) => {
-    const item = zone.querySelector(".drag-item");
-    if (item && expected[zone.dataset.target] === item.dataset.value) ok += 1;
-  });
-  const total = Object.keys(expected).length;
-  showResult(`result_${id}`, `Result: ${ok} / ${total}.`, ok === total ? "ok" : "warn");
+  const result = evaluateMapping(a);
+  showResult(`result_${id}`, `Result: ${result.correct} / ${result.total}.`, result.passed ? "ok" : "warn");
 }
 
 function checkOrder(id) {
   const a = findActivity(id);
-  const got = [...document.querySelectorAll(`#order_${css(id)} .drag-item`)].map((item) => item.dataset.value);
-  const good = JSON.stringify(got) === JSON.stringify(a.config.correctOrder || []);
-  showResult(`result_${id}`, good ? "Correct order." : "Incorrect order. Try again.", good ? "ok" : "warn");
+  const result = evaluateOrder(a);
+  showResult(`result_${id}`, `Result: ${result.correct} / ${result.total}.`, result.passed ? "ok" : "warn");
+}
+
+function checkDecisionTable(id) {
+  const a = findActivity(id);
+  const result = evaluateDecisionTable(a);
+  showResult(`result_${id}`, `Result: ${result.correct} / ${result.total}.`, result.passed ? "ok" : "warn");
+}
+
+function checkImpactAnalysis(id) {
+  const a = findActivity(id);
+  const result = evaluateImpactAnalysis(a);
+  showResult(`result_${id}`, `Result: ${result.correct} / ${result.total}.`, result.passed ? "ok" : "warn");
 }
 
 async function loadSql() {
@@ -945,6 +1693,7 @@ async function runSql(id) {
     };
     saveDraft(a.moduleId, a.activityId, collectDraftAnswer(a));
     db.close();
+    scheduleEvidenceRefresh();
   } catch (e) {
     error.innerHTML = `<div class="result error">Interpreter error: ${esc(e.message)}</div>`;
     state.sqlRuntime[id] = {
@@ -955,6 +1704,7 @@ async function runSql(id) {
       normalized: { columns: [], rows: [] }
     };
     saveDraft(a.moduleId, a.activityId, collectDraftAnswer(a));
+    scheduleEvidenceRefresh();
   }
 }
 
@@ -985,9 +1735,21 @@ function tableHtml(result) {
 
 function validateSql(a, result) {
   const validation = a.config.validation || a.validation || {};
-  const expected = validation.expectedRows || [];
-  if (!expected.length) return true;
-  return JSON.stringify(result.rows) === JSON.stringify(expected);
+  const expectedColumns = validation.expectedColumns || [];
+  const expectedRows = validation.expectedRows || [];
+  if (expectedColumns.length) {
+    const actual = result.columns.map((col) => String(col)).sort();
+    const expected = expectedColumns.map((col) => String(col)).sort();
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) return false;
+  }
+  if (!expectedRows.length) return true;
+  const columns = expectedColumns.length ? expectedColumns : result.columns;
+  const normalizeRow = (row) => columns.reduce((obj, col) => {
+    obj[col] = String(row?.[col] ?? "");
+    return obj;
+  }, {});
+  const sortRows = (rows) => rows.map(normalizeRow).map((row) => JSON.stringify(row)).sort();
+  return JSON.stringify(sortRows(result.rows)) === JSON.stringify(sortRows(expectedRows));
 }
 
 async function loadPyodideRuntime() {
@@ -1126,23 +1888,99 @@ async function submitAssessment(moduleId, autoExpired) {
   const tasks = activities(moduleId).filter((a) => a.activityType !== "assessment_block");
   const results = [];
   let error = "";
+  const placement = isPlacementModule(moduleId);
+  const leveling = isLevelingModule(moduleId);
 
   tasks.forEach((a) => {
     if (error && !autoExpired) return;
     if (a.activityType === "quiz") {
       let correct = 0;
       const selectedAnswers = [];
-      (a.config.questions || []).forEach((q, i) => {
+      const questionResults = [];
+      const questions = a.config.questions || [];
+      const difficultyPlacement = placement && a.config.placementMode === "difficulty";
+      questions.forEach((q, i) => {
         const selected = [...document.querySelectorAll(`[name="q_${css(a.activityId)}_${i}"]:checked`)].map((n) => Number(n.value)).sort();
+        if (placement && !selected.length && !autoExpired) {
+          error = "Answer all placement questions before submitting.";
+          return;
+        }
         selectedAnswers.push(selected);
-        if (JSON.stringify(selected) === JSON.stringify((q.correctAnswers || []).slice().sort())) correct += 1;
+        if (placement) {
+          const expected = (q.correctAnswers || []).slice().sort();
+          const isCorrect = JSON.stringify(selected) === JSON.stringify(expected);
+          if (difficultyPlacement && isCorrect) correct += 1;
+          questionResults.push({
+            question: q.question || `Question ${i + 1}`,
+            questionLevel: difficultyPlacement ? Number(q.level || 1) : undefined,
+            correct: difficultyPlacement ? isCorrect : undefined,
+            selectedAnswers: selected,
+            selectedLabels: selected.map((idx) => quizOptionLabel(q.options?.[idx] ?? idx)),
+            correctAnswers: difficultyPlacement ? expected : undefined,
+            correctLabels: difficultyPlacement ? expected.map((idx) => quizOptionLabel(q.options?.[idx] ?? idx)) : undefined,
+            selectedLevels: selected.map((idx) => quizOptionLevel(q.options?.[idx])).filter(Number.isFinite)
+          });
+        } else if (JSON.stringify(selected) === JSON.stringify((q.correctAnswers || []).slice().sort())) {
+          correct += 1;
+        }
       });
-      const total = (a.config.questions || []).length;
+      if (error && !autoExpired) return;
+      const total = questions.length;
+      if (placement) {
+        const levels = questionResults.flatMap((item) => item.selectedLevels || []);
+        const averageLevel = levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : 1;
+        results.push({
+          activityId: a.activityId,
+          answer: { selectedAnswers, questionResults, averageLevel: Number(averageLevel.toFixed(2)), correct, total },
+          validationStatus: "passed",
+          validationOutput: "Placement responses captured.",
+          score: difficultyPlacement
+            ? (total ? Math.round(Number(a.points || 0) * correct / total) : 0)
+            : Math.round(Number(a.points || 0) * Math.max(0, Math.min(1, averageLevel / 5)))
+        });
+        return;
+      }
       results.push({
         activityId: a.activityId,
         answer: { correct, total, selectedAnswers },
         validationStatus: correct === total ? "passed" : "failed",
         score: total ? Math.round(Number(a.points || 0) * correct / total) : 0
+      });
+    } else if (a.activityType === "drag_mapping") {
+      const result = evaluateMapping(a);
+      results.push({
+        activityId: a.activityId,
+        answer: result.answer,
+        validationStatus: result.passed ? "passed" : "failed",
+        validationOutput: `Automatic mapping check: ${result.correct} / ${result.total}`,
+        score: Math.round(Number(a.points || 0) * result.scoreRatio)
+      });
+    } else if (a.activityType === "drag_order") {
+      const result = evaluateOrder(a);
+      results.push({
+        activityId: a.activityId,
+        answer: { order: result.answer },
+        validationStatus: result.passed ? "passed" : "failed",
+        validationOutput: `Automatic order check: ${result.correct} / ${result.total}`,
+        score: Math.round(Number(a.points || 0) * result.scoreRatio)
+      });
+    } else if (a.activityType === "decision_table") {
+      const result = evaluateDecisionTable(a);
+      results.push({
+        activityId: a.activityId,
+        answer: result.answer,
+        validationStatus: result.passed ? "passed" : "failed",
+        validationOutput: `Automatic decision table check: ${result.correct} / ${result.total}`,
+        score: Math.round(Number(a.points || 0) * result.scoreRatio)
+      });
+    } else if (a.activityType === "impact_analysis") {
+      const result = evaluateImpactAnalysis(a);
+      results.push({
+        activityId: a.activityId,
+        answer: result.answer,
+        validationStatus: result.passed ? "passed" : "failed",
+        validationOutput: `Automatic impact analysis check: ${result.correct} / ${result.total}`,
+        score: Math.round(Number(a.points || 0) * result.scoreRatio)
       });
     } else if (a.activityType === "sql_task") {
       const runtime = state.sqlRuntime[a.activityId];
@@ -1182,8 +2020,64 @@ async function submitAssessment(moduleId, autoExpired) {
         return;
       }
       results.push({ activityId: a.activityId, answer: { text }, validationStatus: text.length >= min ? "pending_review" : "not_checked", score: 0 });
+    } else if (a.activityType === "experience_evidence") {
+      const gate = evidenceGateStatus(a);
+      if (!gate.unlocked) {
+        results.push({
+          activityId: a.activityId,
+          answer: { locked: true, gate },
+          validationStatus: "passed",
+          validationOutput: `Seniority evidence not required. Automatic score ${gate.percent}% is below ${gate.requiredPercent}%.`,
+          score: 0
+        });
+        return;
+      }
+      const prompts = a.config.prompts || defaultEvidencePrompts();
+      const min = Number(a.config.minLength || 60);
+      const responses = {};
+      const missing = [];
+      prompts.forEach((prompt, i) => {
+        const key = prompt.id || `p${i + 1}`;
+        const text = $(`evidence_${a.activityId}_${i}`)?.value.trim() || "";
+        responses[key] = {
+          label: prompt.label || prompt.question || `Evidence ${i + 1}`,
+          text
+        };
+        if (text.length < min) missing.push(prompt.label || prompt.question || `Evidence ${i + 1}`);
+      });
+      if (missing.length && !autoExpired) {
+        error = `Evidence fields need at least ${min} characters: ${missing.slice(0, 2).join(", ")}${missing.length > 2 ? "..." : ""}`;
+        return;
+      }
+      results.push({
+        activityId: a.activityId,
+        answer: { responses },
+        validationStatus: missing.length ? "not_checked" : "pending_review",
+        validationOutput: "Experience evidence requires reviewer confirmation.",
+        score: 0
+      });
+    } else if (a.activityType === "rest_contract") {
+      const result = evaluateRestContract(a);
+      results.push({
+        activityId: a.activityId,
+        answer: result.answer,
+        validationStatus: result.passed ? "passed" : "failed",
+        validationOutput: `Automatic REST contract check: ${result.correct} / ${result.total}`,
+        score: Math.round(Number(a.points || 0) * result.scoreRatio)
+      });
     }
   });
+
+  const placementResult = placement ? buildPlacementResult(results) : null;
+  if (placementResult && results[0]) {
+    results[0].answer.placementResult = placementResult;
+    results[0].validationOutput = placementResult.summary;
+  }
+  const levelingResult = leveling ? buildLevelingResult(levelingEntriesFromResults(moduleId, results)) : null;
+  if (levelingResult && results[0]) {
+    results[0].answer.levelingResult = levelingResult;
+    results[0].validationOutput = [results[0].validationOutput, levelingResult.summary].filter(Boolean).join("\n");
+  }
 
   if (error) {
     showResult("assessment_result", error, "warn");
@@ -1197,10 +2091,15 @@ async function submitAssessment(moduleId, autoExpired) {
       taskResults: results,
       submissionReason: autoExpired ? "time_expired" : "manual"
     });
-    showResult("assessment_result", `${autoExpired ? "Time is over. " : ""}Submitted. Attempt ${response.attemptNo} / ${response.effectiveMaxAttempts}. Status: ${response.resultStatus}.`, "ok");
+    const message = placementResult
+      ? `${autoExpired ? "Time is over. " : ""}Submitted. Recommended level: ${placementResult.recommendedLevel ? `Level ${placementResult.recommendedLevel}` : "Below Level 1"} (${placementResult.label}).${placementResult.mode === "difficulty" ? ` Evidence: ${placementResult.stats.map((s) => `L${s.level} ${s.correct}/${s.total}`).join(", ")}.` : ` Average level: ${placementResult.averageLevel}.`}`
+      : levelingResult
+        ? `${autoExpired ? "Time is over. " : ""}Submitted. ${levelingResult.confirmedLevel ? `Level ${levelingResult.confirmedLevel} confirmed.` : "Level is not confirmed yet."} ${levelingResult.blocked ? `First blocking point: L${levelingResult.blocked.level} needs ${levelingResult.blocked.required}/${levelingResult.blocked.max}; current result is ${levelingResult.blocked.score}/${levelingResult.blocked.max}.` : ""}`
+      : `${autoExpired ? "Time is over. " : ""}Submitted. Attempt ${response.attemptNo} / ${response.effectiveMaxAttempts}. Status: ${response.resultStatus}.`;
     if (state.authToken) await api("/api/draft/clear-module", "POST", { moduleId }).catch(() => {});
     state.timedSubmitStarted = false;
     await load();
+    showResult("assessment_result", message, "ok");
   } catch (e) {
     state.timedSubmitStarted = false;
     showResult("assessment_result", e.message, "error");
@@ -1280,6 +2179,7 @@ async function openAssessmentAttempt(attemptId) {
           <span>${esc(attempt.totalScore)} / ${esc(attempt.maxScore)} (${esc(attempt.scorePercent)}%)</span>
         </div>
       </div>
+      ${renderAttemptLevelingSummary(attempt, tasks)}
       ${tasks.map(renderAttemptTask).join("")}
       ${textArea("review_overall", "Overall review comment", attempt.reviewComment || "")}
       <button class="btn" onclick="submitAssessmentReview('${esc(attempt.attemptId)}','${esc(attempt.assessmentBlockId)}')">Save review</button>
@@ -1288,6 +2188,12 @@ async function openAssessmentAttempt(attemptId) {
   } catch (e) {
     showResult("assessment_result", e.message, "error");
   }
+}
+
+function renderAttemptLevelingSummary(attempt, tasks) {
+  const module = state.data?.modules?.find((m) => m.moduleId === attempt.assessmentBlockId);
+  if ((attempt.reviewMode || module?.reviewMode) !== "leveling") return "";
+  return renderLevelingSummary(buildLevelingResult(levelingEntriesFromAttemptTasks(tasks)));
 }
 
 function renderAttemptTask(task, index) {
@@ -1326,18 +2232,73 @@ function renderAttemptTask(task, index) {
 function renderAttemptAnswer(task) {
   const answer = parseJson(task.answerJson, {});
   const config = parseJson(task.configJson, {});
+  const validation = parseJson(task.validationJson, {});
   if (task.taskType === "open_answer") {
     return `<div class="answer-text">${esc(answer.text || "")}</div>`;
+  }
+  if (task.taskType === "experience_evidence") {
+    if (answer.locked) {
+      return `<div class="result warn">Seniority evidence was not unlocked. Automatic score: ${esc(answer.gate?.percent ?? 0)}%, required: ${esc(answer.gate?.requiredPercent ?? 0)}%.</div>`;
+    }
+    const responses = answer.responses || {};
+    const entries = Object.entries(responses);
+    if (!entries.length) return `<div class="muted">No evidence submitted.</div>`;
+    return entries.map(([key, item]) => {
+      const label = typeof item === "object" && item !== null ? item.label : key;
+      const text = typeof item === "object" && item !== null ? item.text : item;
+      return `
+        <div class="review-question">
+          <b>${esc(label || key)}</b>
+          <div class="answer-text">${esc(text || "")}</div>
+        </div>
+      `;
+    }).join("");
   }
   if (task.taskType === "quiz") {
     const questions = config.questions || [];
     if (!questions.length || !Array.isArray(answer.selectedAnswers)) {
       return `<div class="muted">Correct answers saved: ${esc(answer.correct ?? 0)} / ${esc(answer.total ?? (questions.length || ""))}</div>`;
     }
+    if (answer.placementResult) {
+      if (answer.placementResult.mode === "difficulty") {
+        return `
+          <div class="result ok">${esc(answer.placementResult.summary || `Recommended level: Level ${answer.placementResult.recommendedLevel}`)}</div>
+          ${questions.map((q, i) => {
+            const selected = answer.selectedAnswers[i] || [];
+            const selectedText = selected.map((idx) => quizOptionLabel(q.options?.[idx] ?? idx)).join(", ") || "No answer";
+            const correctText = (q.correctAnswers || []).map((idx) => quizOptionLabel(q.options?.[idx] ?? idx)).join(", ");
+            const item = (answer.questionResults || [])[i] || {};
+            return `
+              <div class="review-question">
+                <b>${esc(q.question || `Question ${i + 1}`)}</b>
+                <div>Student: ${esc(selectedText)}</div>
+                <div class="muted">Difficulty: L${esc(q.level || item.questionLevel || "")} - ${item.correct ? "Correct" : "Incorrect"}</div>
+                <div class="muted">Expected: ${esc(correctText)}</div>
+              </div>
+            `;
+          }).join("")}
+        `;
+      }
+      return `
+        <div class="result ok">${esc(answer.placementResult.summary || `Recommended level: Level ${answer.placementResult.recommendedLevel}`)}</div>
+        ${questions.map((q, i) => {
+          const selected = answer.selectedAnswers[i] || [];
+          const selectedText = selected.map((idx) => quizOptionLabel(q.options?.[idx] ?? idx)).join(", ") || "No answer";
+          const levels = selected.map((idx) => quizOptionLevel(q.options?.[idx])).filter(Number.isFinite);
+          return `
+            <div class="review-question">
+              <b>${esc(q.question || `Question ${i + 1}`)}</b>
+              <div>Student: ${esc(selectedText)}</div>
+              <div class="muted">Level: ${esc(levels.join(", ") || "Not selected")}</div>
+            </div>
+          `;
+        }).join("")}
+      `;
+    }
     return questions.map((q, i) => {
       const selected = answer.selectedAnswers[i] || [];
-      const selectedText = selected.map((idx) => q.options?.[idx] ?? idx).join(", ") || "No answer";
-      const correctText = (q.correctAnswers || []).map((idx) => q.options?.[idx] ?? idx).join(", ");
+      const selectedText = selected.map((idx) => quizOptionLabel(q.options?.[idx] ?? idx)).join(", ") || "No answer";
+      const correctText = (q.correctAnswers || []).map((idx) => quizOptionLabel(q.options?.[idx] ?? idx)).join(", ");
       return `
         <div class="review-question">
           <b>${esc(q.question || `Question ${i + 1}`)}</b>
@@ -1348,10 +2309,87 @@ function renderAttemptAnswer(task) {
     }).join("");
   }
   if (task.taskType === "sql_task") {
-    return `<pre class="review-output">${esc(answer.query || JSON.stringify(answer, null, 2))}</pre>`;
+    const expected = config.validation || validation || {};
+    const studentColumns = answer.rows?.length ? Object.keys(answer.rows[0]) : (expected.expectedColumns || []);
+    return `
+      <div class="review-question"><b>Student SQL</b><pre class="review-output">${esc(answer.query || JSON.stringify(answer, null, 2))}</pre></div>
+      <div class="review-question">
+        <b>Student result</b>
+        ${tableHtml({ columns: studentColumns, rows: answer.rows || [] })}
+      </div>
+      ${renderSqlExpected(expected)}
+    `;
+  }
+  if (task.taskType === "drag_mapping") {
+    const mapping = config.correctMapping || {};
+    return Object.keys(mapping).map((key) => `
+      <div class="review-question">
+        <b>${esc(key)}</b>
+        <div>Student: ${esc(answer[key] || "No match")}</div>
+        <div class="muted">Expected: ${esc(mapping[key])}</div>
+      </div>
+    `).join("");
+  }
+  if (task.taskType === "drag_order") {
+    const got = answer.order || [];
+    const expected = config.correctOrder || [];
+    return `
+      <div class="review-question"><b>Student order</b><div>${esc(got.join(" -> ") || "No answer")}</div></div>
+      <div class="review-question"><b>Expected order</b><div>${esc(expected.join(" -> "))}</div></div>
+    `;
+  }
+  if (task.taskType === "decision_table") {
+    const rows = config.rows || [];
+    return rows.map((row, i) => {
+      const key = row.id || `r${i + 1}`;
+      return `
+        <div class="review-question">
+          <b>${esc(row.case || row.label || key)}</b>
+          <div>Conditions: ${esc((row.conditions || []).join(", "))}</div>
+          <div>Student: ${esc(answer[key] || "No answer")}</div>
+          <div class="muted">Expected: ${esc(row.correctOutcome || "")}</div>
+        </div>
+      `;
+    }).join("");
+  }
+  if (task.taskType === "impact_analysis") {
+    const selected = answer.selected || [];
+    const expected = config.correctImpacts || validation.correctImpacts || [];
+    const areas = config.areas || [];
+    return `
+      <div class="review-question"><b>Student selected</b><div>${esc(selected.join(", ") || "No answer")}</div></div>
+      <div class="review-question"><b>Expected impacts</b><div>${esc(expected.join(", "))}</div></div>
+      ${areas.map((area) => {
+        const id = area.id || area.label || area;
+        return `<div class="muted">${esc(id)} - ${esc(area.label || id)}</div>`;
+      }).join("")}
+    `;
   }
   if (task.taskType === "python_task") {
     return `<pre class="review-output">${esc(answer.code || JSON.stringify(answer, null, 2))}</pre>`;
+  }
+  if (task.taskType === "rest_contract") {
+    const expected = config.validation || validation || {};
+    return `
+      <div class="grid-2">
+        <div class="review-question"><b>Student method</b><div>${esc(answer.method || "")}</div></div>
+        <div class="review-question"><b>Expected method</b><div>${esc(expected.method || "")}</div></div>
+        <div class="review-question"><b>Student path</b><div>${esc(answer.path || "")}</div></div>
+        <div class="review-question"><b>Expected path</b><div>${esc(expected.path || "")}</div></div>
+        <div class="review-question"><b>Student path params</b><div>${esc((answer.pathParams || []).join(", ") || "None")}</div></div>
+        <div class="review-question"><b>Expected path params</b><div>${esc((expected.pathParams || []).join(", ") || "None")}</div></div>
+        <div class="review-question"><b>Student query params</b><div>${esc((answer.queryParams || []).join(", ") || "None")}</div></div>
+        <div class="review-question"><b>Expected query params</b><div>${esc(normalizeQueryParams(expected.queryParams || []).join(", ") || "None")}</div></div>
+        <div class="review-question"><b>Student body</b><div>${esc(answer.requestBody || "")}</div></div>
+        <div class="review-question"><b>Expected body</b><div>${esc(expected.requestBody || "none")}</div></div>
+        <div class="review-question"><b>Student success status</b><div>${esc(answer.successStatus || "")}</div></div>
+        <div class="review-question"><b>Expected success status</b><div>${esc(expected.successStatus || "")}</div></div>
+        <div class="review-question"><b>Student error statuses</b><div>${esc((answer.errorStatuses || []).join(", ") || "None")}</div></div>
+        <div class="review-question"><b>Expected error statuses</b><div>${esc((expected.errorStatuses || []).join(", ") || "None")}</div></div>
+        <div class="review-question"><b>Student response fields</b><div>${esc((answer.responseFields || []).join(", ") || "None")}</div></div>
+        <div class="review-question"><b>Expected response fields</b><div>${esc((expected.responseFields || []).join(", ") || "None")}</div></div>
+      </div>
+    `;
   }
   return `<pre class="review-output">${esc(JSON.stringify(answer, null, 2))}</pre>`;
 }
@@ -1587,7 +2625,7 @@ function renderAssessmentSettings(module = {}) {
       <div class="grid-3">
         ${numberField("me_attempts", "Max attempts", module.maxAttempts || 1)}
         ${numberField("me_passing", "Passing score", module.passingScore || 80)}
-        ${selectField("me_review", "Review mode", [{ value: "mixed", label: "Mixed" }, { value: "auto", label: "Auto" }, { value: "manual", label: "Manual" }], module.reviewMode || "mixed")}
+        ${selectField("me_review", "Review mode", [{ value: "mixed", label: "Mixed" }, { value: "auto", label: "Auto" }, { value: "manual", label: "Manual" }, { value: "placement", label: "Placement" }, { value: "leveling", label: "Level assessment" }], module.reviewMode || "mixed")}
       </div>
       <label class="check-line"><input id="me_lock" type="checkbox" ${truthy(module.lockAfterSubmit ?? true) ? "checked" : ""}> Lock after submit</label>
       <label class="check-line"><input id="me_timed" type="checkbox" ${timed ? "checked" : ""}> Timed assessment</label>
@@ -1640,8 +2678,8 @@ function openActivityEditor(moduleId, activityId = "", insertBefore = "", insert
   const module = state.data.modules.find((m) => m.moduleId === moduleId);
   const activity = activityId ? findActivity(activityId) : null;
   const types = module.moduleType === "assessment"
-    ? [["quiz", "Quiz"], ["sql_task", "SQL task"], ["python_task", "Python task"], ["open_answer", "Open answer"]]
-    : [["html_content", "HTML content"], ["text", "Text"], ["image", "Image"], ["video", "Video player"], ["practice_quiz", "Practice quiz"], ["drag_mapping", "Drag mapping"], ["drag_order", "Drag order"], ["sql_practice", "SQL practice"], ["python_practice", "Python practice"]];
+    ? [["quiz", "Quiz"], ["drag_mapping", "Drag mapping"], ["drag_order", "Drag order"], ["decision_table", "Decision table"], ["impact_analysis", "Impact analysis"], ["rest_contract", "REST contract"], ["sql_task", "SQL task"], ["python_task", "Python task"], ["open_answer", "Open answer"], ["experience_evidence", "Experience evidence"]]
+    : [["html_content", "HTML content"], ["text", "Text"], ["image", "Image"], ["video", "Video player"], ["practice_quiz", "Practice quiz"], ["decision_table", "Decision table"], ["impact_analysis", "Impact analysis"], ["rest_contract", "REST contract"], ["drag_mapping", "Drag mapping"], ["drag_order", "Drag order"], ["sql_practice", "SQL practice"], ["python_practice", "Python practice"]];
   modal(`
     ${modalHeader(activityId ? "Edit activity" : "Add activity")}
     <div class="grid-2">
@@ -1652,14 +2690,15 @@ function openActivityEditor(moduleId, activityId = "", insertBefore = "", insert
     <button class="btn" onclick="saveActivity('${esc(moduleId)}','${esc(activityId)}','${esc(insertBefore)}','${esc(insertAfter)}')">Save</button>
     <div id="modalMsg"></div>
   `);
-  $("ae_type").onchange = () => renderActivityFields(activity);
-  renderActivityFields(activity);
+  $("ae_type").onchange = () => renderActivityFields(activity, module);
+  renderActivityFields(activity, module);
 }
 
-function renderActivityFields(activity) {
+function renderActivityFields(activity, module = {}) {
   const type = val("ae_type");
   const cfg = activity?.config || {};
   const validation = activity?.validation || {};
+  const isAssessment = module.moduleType === "assessment";
   const box = $("activityFields");
   if (!box) return;
 
@@ -1692,6 +2731,16 @@ function renderActivityFields(activity) {
   } else if (type === "drag_order") {
     box.innerHTML = textField("ae_question", "Question", cfg.question || "") + `<div id="orderSteps"></div><button class="btn ghost small" onclick="addStep()">+ Add step</button>`;
     (cfg.correctOrder || cfg.steps || [""]).forEach((step) => addStep(step));
+  } else if (type === "decision_table") {
+    box.innerHTML = textArea("ae_decision_scenario", "Scenario", cfg.scenario || activity?.content || "") +
+      textArea("ae_decision_conditions", "Conditions, one per line", (cfg.conditions || ["Condition A", "Condition B"]).join("\n"), true) +
+      textArea("ae_decision_outcomes", "Outcome options, comma-separated", (cfg.outcomes || ["Approve", "Reject", "Review"]).join(", ")) +
+      textArea("ae_decision_rows", "Rows: Case | condition values comma-separated | correct outcome", decisionRowsToText(cfg.rows || []), true);
+  } else if (type === "impact_analysis") {
+    box.innerHTML = textArea("ae_impact_scenario", "Scenario", cfg.scenario || activity?.content || "") +
+      textArea("ae_impact_areas", "Impact areas, one id|label|description per line", impactAreasToText(cfg.areas || defaultImpactAreas()), true) +
+      textArea("ae_impact_correct", "Correct impacted area ids, comma-separated", (cfg.correctImpacts || validation.correctImpacts || []).join(", ")) +
+      numberField("ae_impact_threshold", "Pass threshold, 0-1", cfg.threshold || 0.8);
   } else if (type === "sql_practice" || type === "sql_task") {
     const schemas = state.data.sqlSchemas.map((s) => ({ value: s.schemaId, label: s.title || s.schemaId }));
     box.innerHTML = selectField("ae_schema", "Schema", schemas, cfg.databaseSchemaId || schemas[0]?.value || "") +
@@ -1707,9 +2756,36 @@ function renderActivityFields(activity) {
     box.innerHTML = textArea("ae_description", "Task description", activity?.content || "") +
       numberField("ae_min", "Minimum length", cfg.minLength || validation.minLength || 30) +
       textField("ae_placeholder", "Placeholder", cfg.placeholder || "Write your answer...");
+  } else if (type === "experience_evidence") {
+    const prompts = cfg.prompts || defaultEvidencePrompts();
+    box.innerHTML = textArea("ae_evidence_instructions", "Instructions", activity?.content || cfg.instructions || "Provide concrete examples that help the reviewer confirm the recommended BA level.") +
+      numberField("ae_evidence_min", "Minimum length per field", cfg.minLength || 60) +
+      `<label class="check-line"><input id="ae_evidence_unlock_enabled" type="checkbox" ${cfg.unlock ? "checked" : ""}> Unlock only after high automatic score</label>` +
+      numberField("ae_evidence_unlock_percent", "Unlock threshold, %", cfg.unlock?.minAutoScorePercent || 80) +
+      `<div id="evidencePrompts"></div><button class="btn ghost small" onclick="addEvidencePrompt()">+ Add evidence prompt</button>`;
+    prompts.forEach((prompt) => addEvidencePrompt(prompt));
+  } else if (type === "rest_contract") {
+    const v = cfg.validation || validation || {};
+    box.innerHTML = textArea("ae_rest_scenario", "Scenario", cfg.scenario || activity?.content || "") +
+      textArea("ae_rest_methods", "Method options, comma-separated", (cfg.methodOptions || ["GET", "POST", "PUT", "PATCH", "DELETE"]).join(", ")) +
+      textField("ae_rest_method", "Correct method", v.method || "GET") +
+      textArea("ae_rest_paths", "Path options, one per line", (cfg.pathOptions || [v.path || "/api/clients/{clientCode}/accounts"]).join("\n"), true) +
+      textField("ae_rest_path", "Correct path", v.path || "/api/clients/{clientCode}/accounts") +
+      textArea("ae_rest_path_params", "Path param options, comma-separated", (cfg.pathParamOptions || v.pathParams || ["clientCode"]).join(", ")) +
+      textArea("ae_rest_path_params_correct", "Correct path params, comma-separated", (v.pathParams || ["clientCode"]).join(", ")) +
+      textArea("ae_rest_query_params", "Query param options, one name=value per line", queryParamsToLines(cfg.queryParamOptions || v.queryParams || [{ name: "status", value: "active" }]), true) +
+      textArea("ae_rest_query_params_correct", "Correct query params, one name=value per line", queryParamsToLines(v.queryParams || [{ name: "status", value: "active" }]), true) +
+      textArea("ae_rest_body_options", "Request body options, comma-separated", (cfg.requestBodyOptions || ["none", "json"]).join(", ")) +
+      textField("ae_rest_body", "Correct request body", v.requestBody || "none") +
+      textArea("ae_rest_success_options", "Success status options, comma-separated", (cfg.successStatusOptions || [200, 201, 204]).join(", ")) +
+      numberField("ae_rest_success", "Correct success status", v.successStatus || 200) +
+      textArea("ae_rest_error_options", "Error status options, comma-separated", (cfg.errorStatusOptions || [400, 401, 403, 404, 409, 422, 500]).join(", ")) +
+      textArea("ae_rest_errors", "Correct error statuses, comma-separated", (v.errorStatuses || [400, 401, 404]).join(", ")) +
+      textArea("ae_rest_response_options", "Response field options, one per line", (cfg.responseFieldOptions || v.responseFields || ["clientCode", "accounts[].accountNumber", "accounts[].currency"]).join("\n"), true) +
+      textArea("ae_rest_response_fields", "Correct response fields, one per line", (v.responseFields || ["clientCode", "accounts[].accountNumber", "accounts[].currency"]).join("\n"), true);
   }
 
-  if (["quiz", "sql_task", "python_task", "open_answer"].includes(type)) {
+  if (isAssessment && ["quiz", "drag_mapping", "drag_order", "decision_table", "impact_analysis", "sql_task", "python_task", "open_answer", "rest_contract", "experience_evidence"].includes(type)) {
     box.innerHTML += `<div class="grid-2">${numberField("ae_points", "Points", activity?.points || 0)}<label class="check-line"><input id="ae_manual" type="checkbox" ${truthy(activity?.manualReviewRequired) ? "checked" : ""}> Manual review required</label></div>`;
   }
 }
@@ -1730,12 +2806,78 @@ function addQuestion(question = { question: "", options: ["", ""], correctAnswer
   (question.options || ["", ""]).forEach((option, i) => addAnswer(div.querySelector("button:last-child"), option, (question.correctAnswers || []).includes(i)));
 }
 
-function addAnswer(button, text = "", isCorrect = false) {
+function addAnswer(button, option = "", isCorrect = false) {
   const host = button.parentElement.querySelector(".answers");
   const row = document.createElement("div");
   row.className = "answer-row";
-  row.innerHTML = `<input class="answer-text" placeholder="Answer option" value="${esc(text)}"><label><input class="answer-correct" type="checkbox" ${isCorrect ? "checked" : ""}> Correct</label><button class="btn danger small" onclick="this.parentElement.remove()">X</button>`;
+  const text = quizOptionLabel(option);
+  const level = quizOptionLevel(option) ?? "";
+  row.innerHTML = `<input class="answer-text" placeholder="Answer option" value="${esc(text)}"><input class="answer-level" type="number" min="1" max="5" placeholder="Level" value="${esc(level)}"><label><input class="answer-correct" type="checkbox" ${isCorrect ? "checked" : ""}> Correct</label><button class="btn danger small" onclick="this.parentElement.remove()">X</button>`;
   host.appendChild(row);
+}
+
+function lines(value) {
+  return String(value || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+}
+
+function csv(value) {
+  return String(value || "").split(",").map((x) => x.trim()).filter(Boolean);
+}
+
+function intCsv(value) {
+  return csv(value).map((x) => Number(x)).filter((x) => !Number.isNaN(x));
+}
+
+function queryParamsToLines(items) {
+  return (items || []).map((item) => typeof item === "string" ? item : queryLabel(item)).join("\n");
+}
+
+function parseQueryParams(value) {
+  return lines(value).map((line) => {
+    const index = line.indexOf("=");
+    if (index < 0) return { name: line, value: "" };
+    return { name: line.slice(0, index).trim(), value: line.slice(index + 1).trim() };
+  }).filter((item) => item.name);
+}
+
+function decisionRowsToText(rows) {
+  return (rows || []).map((row) => `${row.case || row.label || ""} | ${(row.conditions || []).join(", ")} | ${row.correctOutcome || ""}`).join("\n");
+}
+
+function parseDecisionRows(value) {
+  return lines(value).map((line, i) => {
+    const parts = line.split("|").map((part) => part.trim());
+    return {
+      id: `r${i + 1}`,
+      case: parts[0] || `Case ${i + 1}`,
+      conditions: csv(parts[1] || ""),
+      correctOutcome: parts[2] || ""
+    };
+  }).filter((row) => row.case && row.correctOutcome);
+}
+
+function defaultImpactAreas() {
+  return [
+    { id: "ui", label: "UI", description: "Screens, fields, labels, validation messages" },
+    { id: "api", label: "API", description: "Endpoint contract, request/response, status codes" },
+    { id: "database", label: "Database", description: "Tables, fields, migration, constraints" },
+    { id: "reports", label: "Reports", description: "Operational or analytical reports" },
+    { id: "notifications", label: "Notifications", description: "Email, SMS, in-app notifications" },
+    { id: "permissions", label: "Permissions", description: "Roles, access rights, audit" },
+    { id: "qa", label: "QA regression", description: "Regression scope and test data" },
+    { id: "operations", label: "Operations", description: "Back-office procedures and support" }
+  ];
+}
+
+function impactAreasToText(areas) {
+  return (areas || []).map((area) => `${area.id || area.label || area}|${area.label || area.id || area}|${area.description || ""}`).join("\n");
+}
+
+function parseImpactAreas(value) {
+  return lines(value).map((line) => {
+    const parts = line.split("|").map((part) => part.trim());
+    return { id: parts[0], label: parts[1] || parts[0], description: parts[2] || "" };
+  }).filter((area) => area.id);
 }
 
 function addPair(left = "", right = "") {
@@ -1750,6 +2892,21 @@ function addStep(text = "") {
   row.className = "repeat-row";
   row.innerHTML = `<input class="step-text" placeholder="Correct step" value="${esc(text)}"><button class="btn danger small" onclick="this.parentElement.remove()">X</button>`;
   $("orderSteps").appendChild(row);
+}
+
+function addEvidencePrompt(prompt = {}) {
+  const row = document.createElement("div");
+  row.className = "editor-section evidence-prompt-row";
+  row.innerHTML = `
+    <div class="repeat-row">
+      <input class="evidence-label" placeholder="Prompt label" value="${esc(prompt.label || prompt.question || "")}">
+      <button class="btn danger small" onclick="this.closest('.evidence-prompt-row').remove()">Remove</button>
+    </div>
+    <input class="evidence-id" placeholder="Stable id" value="${esc(prompt.id || "")}">
+    <textarea class="evidence-hint" placeholder="Reviewer/student hint">${esc(prompt.hint || "")}</textarea>
+    <textarea class="evidence-placeholder" placeholder="Placeholder shown inside answer field">${esc(prompt.placeholder || "")}</textarea>
+  `;
+  $("evidencePrompts").appendChild(row);
 }
 
 async function saveActivity(moduleId, activityId = "", insertBefore = "", insertAfter = "") {
@@ -1781,7 +2938,13 @@ async function saveActivity(moduleId, activityId = "", insertBefore = "", insert
       cfg = {
         intro: val("ae_intro"),
         questions: [...document.querySelectorAll(".question-editor")].map((q, i) => {
-          const options = [...q.querySelectorAll(".answer-text")].map((input) => input.value);
+          const rows = [...q.querySelectorAll(".answer-row")];
+          const hasLevels = rows.some((row) => row.querySelector(".answer-level")?.value !== "");
+          const options = rows.map((row) => {
+            const text = row.querySelector(".answer-text")?.value || "";
+            const level = Number(row.querySelector(".answer-level")?.value || 0);
+            return hasLevels ? { text, level: Number.isFinite(level) && level > 0 ? level : null } : text;
+          });
           const correctAnswers = [...q.querySelectorAll(".answer-correct")].map((input, j) => input.checked ? j : null).filter((x) => x !== null);
           return { id: `q${i + 1}`, question: q.querySelector(".q-text").value, options, correctAnswers };
         })
@@ -1799,6 +2962,24 @@ async function saveActivity(moduleId, activityId = "", insertBefore = "", insert
     } else if (type === "drag_order") {
       cfg = { question: val("ae_question"), correctOrder: [...document.querySelectorAll(".step-text")].map((input) => input.value).filter(Boolean) };
       cfg.steps = cfg.correctOrder.slice();
+    } else if (type === "decision_table") {
+      payload.content = val("ae_decision_scenario");
+      cfg = {
+        scenario: val("ae_decision_scenario"),
+        conditions: lines(val("ae_decision_conditions")),
+        outcomes: csv(val("ae_decision_outcomes")),
+        rows: parseDecisionRows(val("ae_decision_rows"))
+      };
+      validation = { validationMode: "decision_table" };
+    } else if (type === "impact_analysis") {
+      payload.content = val("ae_impact_scenario");
+      validation = { validationMode: "impact_analysis", correctImpacts: csv(val("ae_impact_correct")) };
+      cfg = {
+        scenario: val("ae_impact_scenario"),
+        areas: parseImpactAreas(val("ae_impact_areas")),
+        correctImpacts: validation.correctImpacts,
+        threshold: Number(val("ae_impact_threshold") || 0.8)
+      };
     } else if (type === "sql_practice" || type === "sql_task") {
       validation = {
         expectedColumns: val("ae_columns").split(",").map((x) => x.trim()).filter(Boolean),
@@ -1812,6 +2993,44 @@ async function saveActivity(moduleId, activityId = "", insertBefore = "", insert
       payload.content = val("ae_description");
       cfg = { minLength: Number(val("ae_min") || 0), placeholder: val("ae_placeholder") };
       validation = { validationMode: "manual", minLength: cfg.minLength };
+    } else if (type === "experience_evidence") {
+      payload.content = val("ae_evidence_instructions");
+      cfg = {
+        instructions: val("ae_evidence_instructions"),
+        minLength: Number(val("ae_evidence_min") || 60),
+        unlock: checked("ae_evidence_unlock_enabled") ? { minAutoScorePercent: Number(val("ae_evidence_unlock_percent") || 80) } : null,
+        prompts: [...document.querySelectorAll(".evidence-prompt-row")].map((row, i) => ({
+          id: row.querySelector(".evidence-id")?.value || `p${i + 1}`,
+          label: row.querySelector(".evidence-label")?.value || `Evidence ${i + 1}`,
+          hint: row.querySelector(".evidence-hint")?.value || "",
+          placeholder: row.querySelector(".evidence-placeholder")?.value || ""
+        })).filter((prompt) => prompt.label)
+      };
+      validation = { validationMode: "manual", minLength: cfg.minLength };
+    } else if (type === "rest_contract") {
+      payload.content = val("ae_rest_scenario");
+      validation = {
+        method: val("ae_rest_method"),
+        path: val("ae_rest_path"),
+        pathParams: csv(val("ae_rest_path_params_correct")),
+        queryParams: parseQueryParams(val("ae_rest_query_params_correct")),
+        requestBody: val("ae_rest_body") || "none",
+        successStatus: Number(val("ae_rest_success") || 200),
+        errorStatuses: intCsv(val("ae_rest_errors")),
+        responseFields: lines(val("ae_rest_response_fields"))
+      };
+      cfg = {
+        scenario: val("ae_rest_scenario"),
+        methodOptions: csv(val("ae_rest_methods")),
+        pathOptions: lines(val("ae_rest_paths")),
+        pathParamOptions: csv(val("ae_rest_path_params")),
+        queryParamOptions: parseQueryParams(val("ae_rest_query_params")),
+        requestBodyOptions: csv(val("ae_rest_body_options")),
+        successStatusOptions: intCsv(val("ae_rest_success_options")),
+        errorStatusOptions: intCsv(val("ae_rest_error_options")),
+        responseFieldOptions: lines(val("ae_rest_response_options")),
+        validation
+      };
     }
 
     payload.configJson = JSON.stringify(cfg);

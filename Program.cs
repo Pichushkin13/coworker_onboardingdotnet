@@ -343,7 +343,7 @@ app.MapPost("/api/{**rest}", async (string rest, HttpRequest request) =>
             var status = S(payload, "resultStatus");
             var attempts = Rows(conn,
                 """
-                SELECT a.*, c.title AS courseTitle, m.title AS moduleTitle, m.passingScore AS passingScore
+                SELECT a.*, c.title AS courseTitle, m.title AS moduleTitle, m.passingScore AS passingScore, m.reviewMode AS reviewMode
                 FROM assessmentAttempts a
                 LEFT JOIN courses c ON c.courseId=a.courseId
                 LEFT JOIN modules m ON m.moduleId=a.assessmentBlockId
@@ -374,7 +374,7 @@ app.MapPost("/api/{**rest}", async (string rest, HttpRequest request) =>
             var attemptId = Required(payload, "attemptId", "Attempt ID");
             var attempt = Rows(conn,
                 """
-                SELECT a.*, c.title AS courseTitle, m.title AS moduleTitle, m.passingScore AS passingScore
+                SELECT a.*, c.title AS courseTitle, m.title AS moduleTitle, m.passingScore AS passingScore, m.reviewMode AS reviewMode
                 FROM assessmentAttempts a
                 LEFT JOIN courses c ON c.courseId=a.courseId
                 LEFT JOIN modules m ON m.moduleId=a.assessmentBlockId
@@ -1148,8 +1148,8 @@ Dictionary<string, object?> ActivityPayload(JsonObject payload, Dictionary<strin
 
 void ValidateActivityType(Dictionary<string, object?> module, string activityType)
 {
-    var learning = new HashSet<string> { "html_content", "text", "content", "image", "practice_quiz", "drag_mapping", "drag_order", "sql_practice", "python_practice" };
-    var assessment = new HashSet<string> { "quiz", "sql_task", "python_task", "open_answer" };
+    var learning = new HashSet<string> { "html_content", "text", "content", "image", "practice_quiz", "drag_mapping", "drag_order", "sql_practice", "python_practice", "rest_contract", "decision_table", "impact_analysis" };
+    var assessment = new HashSet<string> { "quiz", "drag_mapping", "drag_order", "decision_table", "impact_analysis", "sql_task", "python_task", "open_answer", "rest_contract", "experience_evidence" };
     var allowed = ObjString(module, "moduleType") == "assessment" ? assessment : learning;
     if (!allowed.Contains(activityType))
         throw new AppError($"Activity type {activityType} is not allowed for module type {ObjString(module, "moduleType")}.");
@@ -1279,6 +1279,11 @@ Dictionary<string, object?> CompleteAssessmentAttempt(
             if (id.Length > 0) results[id] = obj;
         }
     }
+    foreach (var task in tasks)
+    {
+        var activityId = ObjString(task, "activityId");
+        if (results.TryGetValue(activityId, out var result)) NormalizeSubmittedTaskResult(task, result);
+    }
 
     var score = 0;
     var maxScore = 0;
@@ -1359,6 +1364,61 @@ Dictionary<string, object?> CompleteAssessmentAttempt(
         ["resultStatus"] = resultStatus,
         ["submissionReason"] = reason
     };
+}
+
+void NormalizeSubmittedTaskResult(Dictionary<string, object?> task, JsonObject result)
+{
+    if (ObjString(task, "activityType") == "sql_task") NormalizeSqlTaskResult(task, result);
+}
+
+void NormalizeSqlTaskResult(Dictionary<string, object?> task, JsonObject result)
+{
+    var answer = result["answer"] as JsonObject;
+    var rows = answer?["rows"] as JsonArray;
+    if (rows is null) return;
+
+    var validation = TaskValidation(task);
+    var expectedColumns = JsonArrayStrings(validation["expectedColumns"] as JsonArray);
+    var expectedRows = validation["expectedRows"] as JsonArray ?? new JsonArray();
+    var passed = SqlRowsMatch(rows, expectedRows, expectedColumns);
+    result["validationStatus"] = passed ? "passed" : "failed";
+    result["validationOutput"] = $"Server SQL check: {(passed ? "passed" : "failed")}.";
+    result["score"] = passed ? ObjInt(task, "points") : 0;
+}
+
+JsonObject TaskValidation(Dictionary<string, object?> task)
+{
+    var validation = ParseJsonObject(ObjString(task, "validationJson", "{}")) as JsonObject ?? new JsonObject();
+    if (validation.Count > 0) return validation;
+    var config = ParseJsonObject(ObjString(task, "configJson", "{}")) as JsonObject ?? new JsonObject();
+    return config["validation"] as JsonObject ?? new JsonObject();
+}
+
+bool SqlRowsMatch(JsonArray actualRows, JsonArray expectedRows, List<string> expectedColumns)
+{
+    var columns = expectedColumns.Count > 0 ? expectedColumns : ColumnsFromRows(expectedRows);
+    if (columns.Count > 0)
+    {
+        var actualColumns = ColumnsFromRows(actualRows).OrderBy(x => x).ToList();
+        var expected = columns.OrderBy(x => x).ToList();
+        if (!actualColumns.SequenceEqual(expected)) return false;
+    }
+    if (expectedRows.Count == 0) return true;
+    return CanonicalRows(actualRows, columns).SequenceEqual(CanonicalRows(expectedRows, columns));
+}
+
+List<string> JsonArrayStrings(JsonArray? array) =>
+    array?.Select(x => x?.ToString() ?? "").Where(x => x.Length > 0).ToList() ?? new List<string>();
+
+List<string> ColumnsFromRows(JsonArray rows) =>
+    rows.OfType<JsonObject>().SelectMany(row => row.Select(kv => kv.Key)).Distinct().ToList();
+
+List<string> CanonicalRows(JsonArray rows, List<string> columns)
+{
+    return rows.OfType<JsonObject>()
+        .Select(row => string.Join("\u001F", columns.Select(col => row.TryGetPropertyValue(col, out var value) ? value?.ToString() ?? "" : "")))
+        .OrderBy(x => x)
+        .ToList();
 }
 
 Dictionary<string, object?> RecalculateAssessmentAttempt(SqliteConnection conn, Dictionary<string, object?> attempt)
