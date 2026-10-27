@@ -815,14 +815,14 @@
     {
       "id": "mod_card_onboarding_read_9",
       "title": "9. Проверяем API в Postman",
-      "description": "Выполните один GET-запрос и свяжите ответ с интерфейсом.",
+      "description": "Проверьте курсы валют для банковского экрана и покажите, как связать ответ сервиса с интерфейсом.",
       "type": "assessment",
       "activities": [
         {
           "id": "act_card_onboarding_read_9",
           "type": "html_content",
           "title": "Материалы кейса",
-          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">09</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Запрос и фактический ответ</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>1 запрос · 4 UI-соответствия</strong></div><ul class=\"lesson-notes\"><li>Возьмите Frankfurter или согласованный с ментором публичный API.</li><li>Обязателен один GET: запрос, status и фактический ответ.</li><li>POST/PUT, негативные сценарии и Collection Runner — дополнительная практика по желанию.</li></ul><details class=\"lesson-resources\"><summary>Материалы для изучения</summary><ul><li><a href=\"https://frankfurter.dev/\" target=\"_blank\" rel=\"noopener noreferrer\">Frankfurter: документация</a></li><li><a href=\"https://fakerestapi.azurewebsites.net/index.html\" target=\"_blank\" rel=\"noopener noreferrer\">API для практики</a></li><li><a href=\"https://petstore.swagger.io/\" target=\"_blank\" rel=\"noopener noreferrer\">Swagger Petstore</a></li><li><a href=\"https://app.swaggerhub.com/apis/KARENHARUTYUNYAN/ForLessons/1.0.0#/user/createUsersWithArrayInput\" target=\"_blank\" rel=\"noopener noreferrer\">API из исходного задания</a></li></ul></details></section>",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">09</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Проверяем курсы валют для экрана банка</h3></div></header><p>Команда готовит экран курсов валют в мобильном банке. Клиент выбирает доллары США и видит курс к евро и британскому фунту. До передачи задачи разработчикам нужно убедиться, что внешний сервис возвращает все необходимые сведения.</p><div class=\"lesson-outcome\"><span>Что ожидаем в результате</span><strong>Запрос в Postman · ответ сервиса · связь с экраном</strong></div><h4>Задача</h4><ol class=\"lesson-route\"><li>Изучите документацию Frankfurter v1 и самостоятельно составьте в Postman GET-запрос последних доступных курсов доллара США к евро и британскому фунту.</li><li>Выполните запрос и сохраните фактический ответ. Проверьте, соответствует ли он выбранным валютам и содержит ли дату курса.</li><li>Сопоставьте сведения из запроса и ответа с элементами экрана в задании ниже.</li></ol><h4>Что ожидаем в результате</h4><ul class=\"lesson-notes\"><li>Адрес выполненного запроса с параметрами, HTTP-статус и полученный JSON-ответ.</li><li>Краткое описание того, откуда экран получит базовую валюту, дату, коды валют и значения курсов. Укажите одно преобразование данных для отображения.</li><li>Названия полей, коды валют и подписи в примере экрана оставьте на английском. Используйте фактические значения ответа, а не придуманные курсы.</li></ul><details class=\"lesson-resources\"><summary>Документация сервиса</summary><ul><li><a href=\"https://frankfurter.dev/v1/\" target=\"_blank\" rel=\"noopener noreferrer\">Frankfurter v1: запросы и параметры</a></li></ul></details></section>",
           "config": {},
           "points": 0
         },
@@ -832,7 +832,7 @@
           "title": "Сопоставление UI и API: курсы валют",
           "config": {
             "inputMode": "drag",
-            "scenario": "Учебный пример: GET /training/exchange-rates?base=USD возвращает {\"base\":\"USD\",\"date\":\"2026-01-15\",\"rates\":{\"EUR\":0.92,\"GBP\":0.79}}. Сопоставьте элементы экрана с запросом или ответом. Реальный ответ Frankfurter изучите самостоятельно в Postman и опишите в тетради ниже.",
+            "scenario": "После выполнения запроса сопоставьте элементы экрана с источниками данных в Frankfurter v1. Базовая валюта — USD, целевые валюты — EUR и GBP. Опирайтесь на структуру фактического запроса и ответа, а не на названия элементов интерфейса.",
             "leftTitle": "Элемент интерфейса",
             "rightTitle": "Элемент контракта",
             "leftItems": [
@@ -860,7 +860,7 @@
         {
           "id": "act_card_onboarding_submission_7",
           "type": "worksheet",
-          "title": "Ваш результат",
+          "title": "Что ожидаем в результате",
           "content": "",
           "config": {
             "minLength": 1,
@@ -868,9 +868,9 @@
             "prompts": [
               {
                 "id": "get_evidence",
-                "label": "Ваш GET-запрос и результат",
-                "hint": "URL, дата, HTTP status и ответ или ссылка на коллекцию. Удалите секреты. Подойдет один успешный запрос.",
-                "placeholder": "Короткий ответ по пунктам…",
+                "label": "Запрос и фактический ответ",
+                "hint": "Укажите полный URL с параметрами, HTTP-статус и JSON-ответ, полученный в Postman. Должны быть запрошены курсы USD к EUR и GBP.",
+                "placeholder": "Request URL: ...\nHTTP status: ...\nResponse body:\n...",
                 "legacyIds": [
                   "swagger_source",
                   "get_request",
@@ -883,9 +883,9 @@
               },
               {
                 "id": "ui_mapping",
-                "label": "Связь с экраном",
-                "hint": "На фактическом ответе покажите, откуда взять базовую валюту, дату, коды и значения курсов. Отметьте одно преобразование для UI.",
-                "placeholder": "Короткий ответ по пунктам…",
+                "label": "Как ответ сервиса связан с экраном",
+                "hint": "Для базовой валюты, даты, кодов валют и значений курсов укажите источник в запросе или ответе. Опишите одно преобразование для отображения. Названия полей и подписи примера экрана используйте на английском.",
+                "placeholder": "Base currency: ...\nRate date: ...\nTarget currencies: ...\nExchange rates: ...\nDisplay transformation: ...",
                 "legacyIds": []
               }
             ]
