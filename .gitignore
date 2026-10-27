@@ -9,3 +9,5 @@ __pycache__/
 .env
 *.log
 .dotnet-sdk/
+.tools/
+test-artifacts/

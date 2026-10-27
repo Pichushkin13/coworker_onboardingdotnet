@@ -1,0 +1,1026 @@
+{
+  "courseId": "course_ba_card_replacement_onboarding",
+  "title": "Онбординг BA: заявка на замену банковской карты",
+  "description": "Полный учебный кейс по интервью: требования, PRD, MVP, BPMN, wireframe, grooming, SQL, API и продуктовые предложения.",
+  "schema": "CREATE TABLE INTERNATIONAL_PAYMENT (ID INTEGER PRIMARY KEY, PAYMENT_NUMBER TEXT, SENDER TEXT, RECIPIENT TEXT, CREATED_AT TEXT);\nCREATE TABLE INTERNATIONAL_PAYMENT_ATTACHMENT (ID INTEGER PRIMARY KEY, PAYMENT_ID INTEGER, FILE_URL TEXT);\nCREATE TABLE BUDGET_PAYMENT (ID INTEGER PRIMARY KEY, PAYMENT_DATE TEXT, PURPOSE TEXT, IS_FOREIGN_CITIZEN INTEGER, AMOUNT_AMD INTEGER);\nCREATE TABLE ACCOUNT (ACCOUNT_ID TEXT PRIMARY KEY, CLIENT_CODE TEXT);\nINSERT INTO INTERNATIONAL_PAYMENT VALUES (1,'IP001','Ani','David','2023-01-10 10:00:00'),(2,'IP002','Ani','David','2023-02-01 12:00:00'),(3,'IP003','Ani','Mariam','2023-02-02 12:00:00');\nINSERT INTO INTERNATIONAL_PAYMENT_ATTACHMENT VALUES (1,1,'https://example.test/files/1.pdf'),(2,2,'https://example.test/files/2.pdf'),(3,3,'https://example.test/files/3.pdf');\nINSERT INTO BUDGET_PAYMENT VALUES (1,'2023-01-01','VAT_REFUND',1,1000),(2,'2023-03-31','VAT_REFUND',1,2500),(3,'2023-02-10','VAT_REFUND',1,999),(4,'2023-04-01','VAT_REFUND',1,4000),(5,'2023-01-15','VAT_REFUND',0,5000),(6,'2023-02-15','OTHER',1,6000);\nINSERT INTO ACCOUNT VALUES ('A1','C001'),('A2','C001'),('A3','C001'),('A4','C002'),('A5','C002'),('A6','C003');",
+  "modules": [
+    {
+      "id": "mod_card_onboarding_read_0",
+      "title": "Старт: ваш первый кейс",
+      "description": "Пройдите путь аналитика на одном кейсе: замена банковской карты в системе «X».",
+      "type": "learning",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_0",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">00</span><div><span class=\"interview-eyebrow\">Онбординг бизнес-аналитика</span><h3>Учебный кейс: замена карты</h3></div></header><div class=\"lesson-cover\"><img src=\"/assets/card-onboarding.png\" alt=\"Банковские карты и требования\" width=\"2172\" height=\"724\"></div><p>Вы получили запись интервью от предыдущего аналитика. Повторно опросить бизнес пока нельзя: восстановите требования и явно отметьте пробелы.</p><ol class=\"lesson-route\"><li>Разобраться: интервью, требования, MVP.</li><li>Спроектировать: процесс и экран.</li><li>Проверить: обсуждение, данные и API.</li><li>Предложить: улучшение и альтернативу.</li></ol><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>Один кейс · 11 коротких этапов</strong></div></section>",
+          "config": {},
+          "points": 0
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_1",
+      "title": "1. Разбираем интервью",
+      "description": "Отделите факты от предположений и подготовьте вопросы к бизнесу.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_1",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"interview interview-page\" data-interview>\n<div class=\"interview-banner\"><img src=\"/assets/card-onboarding.png\" width=\"2172\" height=\"724\" alt=\"Банковские карты и документ с требованиями\"><div class=\"interview-banner-copy\"><span class=\"interview-eyebrow\">Учебный кейс · Система «X»</span><h3>Одна заявка.<br>Четыре точки зрения.</h3><p>Восстановите требования к замене карты по записи разговора с бизнесом.</p></div></div>\n<div class=\"interview-section-heading\"><div><span class=\"interview-eyebrow\">01 / Контекст</span><h3>Участники интервью</h3></div><span class=\"interview-meta\">4 участника · 11 тем · 39 реплик</span></div>\n<div class=\"interview-people\"><div class=\"interview-person\"><span class=\"interview-avatar tone-teal\">АР</span><div><strong>Арман</strong><span class=\"interview-person-role\">Бизнес-аналитик</span><p>Проводит интервью и собирает требования.</p></div></div><div class=\"interview-person\"><span class=\"interview-avatar tone-coral\">АН</span><div><strong>Анна</strong><span class=\"interview-person-role\">Руководитель отделения</span><p>Представляет сотрудников фронт-офиса.</p></div></div><div class=\"interview-person\"><span class=\"interview-avatar tone-blue\">ДА</span><div><strong>Давид</strong><span class=\"interview-person-role\">Card Operations</span><p>Отвечает за обработку заявок и выпуск карт.</p></div></div><div class=\"interview-person\"><span class=\"interview-avatar tone-plum\">МА</span><div><strong>Мария</strong><span class=\"interview-person-role\">Информационная безопасность</span><p>Оценивает риски утраты, кражи и компрометации.</p></div></div></div>\n<aside class=\"interview-brief\"><strong>Ваша задача</strong><p>Предыдущий аналитик не завершил работу, а повторное интервью пока невозможно. Найдите подтвержденные требования, противоречия и пробелы. Недостающие сведения остаются вопросами или предположениями.</p></aside>\n<div class=\"interview-section-heading\"><div><span class=\"interview-eyebrow\">02 / Запись разговора</span><h3>Интервью с командой</h3></div><div class=\"interview-tools\"><button type=\"button\" data-interview-expand=\"true\" title=\"Раскрыть все темы\">Раскрыть все</button><button type=\"button\" data-interview-expand=\"false\" title=\"Свернуть все темы\">Свернуть все</button></div></div>\n<nav class=\"interview-topic-nav\" aria-label=\"Темы интервью\"><a href=\"#interview-topic-0\" data-interview-topic=\"interview-topic-0\">01 Проблема бизнеса</a><a href=\"#interview-topic-1\" data-interview-topic=\"interview-topic-1\">02 Точка входа</a><a href=\"#interview-topic-2\" data-interview-topic=\"interview-topic-2\">03 Доступные карты</a><a href=\"#interview-topic-3\" data-interview-topic=\"interview-topic-3\">04 Причины замены</a><a href=\"#interview-topic-4\" data-interview-topic=\"interview-topic-4\">05 Данные заявки</a><a href=\"#interview-topic-5\" data-interview-topic=\"interview-topic-5\">06 Блокировка карты</a><a href=\"#interview-topic-6\" data-interview-topic=\"interview-topic-6\">07 Получение новой карты</a><a href=\"#interview-topic-7\" data-interview-topic=\"interview-topic-7\">08 Создание заявки</a><a href=\"#interview-topic-8\" data-interview-topic=\"interview-topic-8\">09 Статусы</a><a href=\"#interview-topic-9\" data-interview-topic=\"interview-topic-9\">10 Отмена заявки</a><a href=\"#interview-topic-10\" data-interview-topic=\"interview-topic-10\">11 Ограничения и риски</a></nav>\n<div class=\"interview-feedback\" data-interview-feedback role=\"status\" aria-live=\"polite\"></div>\n<div class=\"interview-turns\"><details class=\"interview-topic\" id=\"interview-topic-0\" open><summary><span class=\"interview-topic-number\">01</span><span><strong>Проблема бизнеса</strong><small>Расскажите, пожалуйста, какую проблему необходимо решить.</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Расскажите, пожалуйста, какую проблему необходимо решить.</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Сейчас процесс замены карты неудобный. Сотрудник открывает клиента в системе «X», находит нужную карту, а затем создаёт обращение в другой системе. Иногда приходится дополнительно писать сотрудникам Card Operations. Мы хотим, чтобы заявку можно было создать прямо в системе «X».</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">Главная проблема в том, что обращения часто приходят с неполными данными. Иногда не указана причина замены или невозможно понять, какую именно карту нужно заменить. Нам нужна структурированная заявка.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details><details class=\"interview-topic\" id=\"interview-topic-1\" ><summary><span class=\"interview-topic-number\">02</span><span><strong>Точка входа</strong><small>Откуда сотрудник должен начинать создание заявки?</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Откуда сотрудник должен начинать создание заявки?</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Из карточки клиента. Сотрудник уже находится в ней во время обслуживания.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">Но в заявке обязательно должна быть указана конкретная карта.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details><details class=\"interview-topic\" id=\"interview-topic-2\" ><summary><span class=\"interview-topic-number\">03</span><span><strong>Доступные карты</strong><small>Какие карты сотрудник должен видеть?</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Какие карты сотрудник должен видеть?</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Все карты клиента, чтобы сотрудник сам мог выбрать нужную.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">Закрытые карты показывать не нужно. И нельзя создавать новую заявку, если по карте уже идёт замена.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-plum\">МА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Мария</strong><span>Информационная безопасность</span></div><p class=\"interview-message-text\">Для украденной или скомпрометированной карты важно, чтобы сотрудник не выбрал другую карту по ошибке.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Мария\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details><details class=\"interview-topic\" id=\"interview-topic-3\" ><summary><span class=\"interview-topic-number\">04</span><span><strong>Причины замены</strong><small>Какие причины замены необходимо поддержать?</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Какие причины замены необходимо поддержать?</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Потеря, кража, повреждение и ситуация, когда карта перестала работать.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">Нужно добавить компрометацию данных карты. Ещё бывают случаи изменения имени клиента, но это, возможно, отдельный процесс.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details><details class=\"interview-topic\" id=\"interview-topic-4\" ><summary><span class=\"interview-topic-number\">05</span><span><strong>Данные заявки</strong><small>Какие данные нужно заполнять при создании заявки?</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Какие данные нужно заполнять при создании заявки?</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Лучше минимальное количество. Данные клиента и карты уже есть в системе.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">Нам нужны карта, причина замены, отделение получения новой карты и комментарий. Но комментарий нужен не всегда.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-plum\">МА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Мария</strong><span>Информационная безопасность</span></div><p class=\"interview-message-text\">Для кражи и компрометации сотрудник должен подтвердить, что клиент идентифицирован.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Мария\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details><details class=\"interview-topic\" id=\"interview-topic-5\" ><summary><span class=\"interview-topic-number\">06</span><span><strong>Блокировка карты</strong><small>Старая карта должна блокироваться?</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Старая карта должна блокироваться?</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-plum\">МА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Мария</strong><span>Информационная безопасность</span></div><p class=\"interview-message-text\">При краже, потере и компрометации — обязательно.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Мария\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">При повреждении её можно не блокировать сразу. Клиент иногда продолжает пользоваться картой до получения новой.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Сотрудник должен видеть, будет ли карта заблокирована после создания заявки.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details><details class=\"interview-topic\" id=\"interview-topic-6\" ><summary><span class=\"interview-topic-number\">07</span><span><strong>Получение новой карты</strong><small>Какие варианты получения новой карты нужны?</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Какие варианты получения новой карты нужны?</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Получение в отделении и доставка клиенту.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">Доставку лучше не включать в первую версию. Для неё нужно дополнительно проверять адрес и передавать заявку в службу доставки.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Хорошо, тогда в первой версии можно оставить отделение.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details><details class=\"interview-topic\" id=\"interview-topic-7\" ><summary><span class=\"interview-topic-number\">08</span><span><strong>Создание заявки</strong><small>Что должно происходить после нажатия кнопки создания заявки?</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Что должно происходить после нажатия кнопки создания заявки?</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">Заявку нужно передать в Card Processing Service. Сервис создаст заявку на замену и вернёт её номер.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Сотруднику нужно показать, что заявка успешно создана.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-plum\">МА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Мария</strong><span>Информационная безопасность</span></div><p class=\"interview-message-text\">Нужно зафиксировать, кто и когда её создал.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Мария\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details><details class=\"interview-topic\" id=\"interview-topic-8\" ><summary><span class=\"interview-topic-number\">09</span><span><strong>Статусы</strong><small>Нужно ли отображать статус заявки?</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Нужно ли отображать статус заявки?</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Да, сотрудник должен понимать, что происходит с картой.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">У нас есть статусы обработки, но их список лучше уточнить отдельно.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details><details class=\"interview-topic\" id=\"interview-topic-9\" ><summary><span class=\"interview-topic-number\">10</span><span><strong>Отмена заявки</strong><small>Можно ли отменить заявку?</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Можно ли отменить заявку?</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Наверное, да, если клиент передумал.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">После начала выпуска карты отменить заявку уже нельзя.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details><details class=\"interview-topic\" id=\"interview-topic-10\" ><summary><span class=\"interview-topic-number\">11</span><span><strong>Ограничения и риски</strong><small>Есть ли ещё важные ограничения?</small></span><span class=\"interview-topic-indicator\" aria-hidden=\"true\">+</span></summary><div class=\"interview-messages\"><article class=\"interview-message interview-question\"><span class=\"interview-avatar tone-teal\">АР</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Арман</strong><span>Бизнес-аналитик</span></div><p class=\"interview-message-text\">Есть ли ещё важные ограничения?</p></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-blue\">ДА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Давид</strong><span>Card Operations</span></div><p class=\"interview-message-text\">Нельзя создать две активные заявки на замену одной карты.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Давид\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-plum\">МА</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Мария</strong><span>Информационная безопасность</span></div><p class=\"interview-message-text\">При компрометации карта должна блокироваться независимо от того, успешно ли была создана заявка на выпуск новой карты.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Мария\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article><article class=\"interview-message \"><span class=\"interview-avatar tone-coral\">АН</span><div class=\"interview-message-body\"><div class=\"interview-message-heading\"><strong>Анна</strong><span>Руководитель отделения</span></div><p class=\"interview-message-text\">Важно, чтобы сотрудник получил понятное сообщение, если операция не выполнена.</p><button type=\"button\" class=\"interview-quote\" data-quote-author=\"Анна\" title=\"Добавить эту цитату в ответ\"><span aria-hidden=\"true\">+</span> В требования</button></div></article></div></details></div>\n<div class=\"interview-handoff\"><span class=\"interview-eyebrow\">03 / Ваш анализ</span><h3>От разговора — к требованиям</h3><p>Заполните рабочую тетрадь ниже: требования с источниками, противоречия, уточняющие вопросы, предположения и решения для согласования.</p></div>\n</section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_fact_or_question",
+          "type": "drag_mapping",
+          "title": "Факт, предположение или вопрос?",
+          "config": {
+            "inputMode": "drag",
+            "scenario": "Сопоставьте три фрагмента с их статусом по интервью.",
+            "leftTitle": "Фрагмент",
+            "rightTitle": "Соответствие",
+            "leftItems": [
+              "В первой версии — получение в отделении",
+              "Клиенту обязательно отправляют SMS",
+              "Какие статусы заявки показывать?"
+            ],
+            "rightItems": [
+              "Подтверждено",
+              "Предположение",
+              "Открытый вопрос"
+            ],
+            "correctMapping": {
+              "В первой версии — получение в отделении": "Подтверждено",
+              "Клиенту обязательно отправляют SMS": "Предположение",
+              "Какие статусы заявки показывать?": "Открытый вопрос"
+            }
+          },
+          "points": 5,
+          "manual": false
+        },
+        {
+          "id": "act_card_onboarding_worksheet_1",
+          "type": "worksheet",
+          "title": "Ваш результат",
+          "content": "",
+          "config": {
+            "minLength": 1,
+            "allowPaste": true,
+            "prompts": [
+              {
+                "id": "requirements",
+                "label": "Три подтвержденных требования",
+                "hint": "Для каждого: формулировка, тип требования, участник и короткая цитата. Можно добавлять цитаты из интервью кнопкой «В требования».",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": []
+              },
+              {
+                "id": "questions",
+                "label": "Три вопроса к бизнесу",
+                "hint": "Выберите самые важные пробелы. Для каждого укажите, кого спросить и почему ответ нужен для реализации.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "questions_0",
+                  "questions_1",
+                  "questions_2",
+                  "questions_3",
+                  "questions_4",
+                  "questions_5",
+                  "questions_6",
+                  "questions_7",
+                  "questions_8",
+                  "questions_9",
+                  "questions_10",
+                  "questions_11"
+                ]
+              },
+              {
+                "id": "gaps",
+                "label": "Противоречие и предположение",
+                "hint": "Укажите одно противоречие или неоднозначность и одно предположение: основание, риск и кто подтвердит.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "conflicts",
+                  "ambiguities",
+                  "assumptions",
+                  "decisions"
+                ]
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "manual"
+          },
+          "points": 10,
+          "manual": true
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_2",
+      "title": "2. Формулируем требования",
+      "description": "Превратите интервью в небольшой набор требований для команды.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_2",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">02</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Epic и критерии приемки</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>1 Epic · 2 User Stories</strong></div><ul class=\"lesson-notes\"><li>Epic: зачем бизнесу нужна замена карты в системе «X»?</li><li>Две User Stories: создание заявки и обработка ошибки.</li><li>Для каждой истории достаточно двух проверяемых Acceptance Criteria.</li></ul></section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_requirement_or_criterion",
+          "type": "drag_mapping",
+          "title": "Что делает требование проверяемым?",
+          "config": {
+            "inputMode": "drag",
+            "scenario": "Различите цель, действие системы и критерий приемки.",
+            "leftTitle": "Фрагмент",
+            "rightTitle": "Соответствие",
+            "leftItems": [
+              "Снизить число неполных обращений",
+              "Передать заявку в Card Processing Service",
+              "При успехе показать полученный номер заявки"
+            ],
+            "rightItems": [
+              "Бизнес-цель",
+              "Функция системы",
+              "Критерий приемки"
+            ],
+            "correctMapping": {
+              "Снизить число неполных обращений": "Бизнес-цель",
+              "Передать заявку в Card Processing Service": "Функция системы",
+              "При успехе показать полученный номер заявки": "Критерий приемки"
+            }
+          },
+          "points": 5,
+          "manual": false
+        },
+        {
+          "id": "act_card_onboarding_worksheet_2",
+          "type": "worksheet",
+          "title": "Ваш результат",
+          "content": "",
+          "config": {
+            "minLength": 1,
+            "allowPaste": true,
+            "prompts": [
+              {
+                "id": "epic_scope",
+                "label": "Epic и границы",
+                "hint": "Бизнес-цель; что входит в решение и что не входит. Достаточно одного абзаца и двух коротких списков.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "prd_0",
+                  "prd_1",
+                  "prd_2"
+                ]
+              },
+              {
+                "id": "stories",
+                "label": "Две User Stories с критериями",
+                "hint": "На каждую: роль, действие, ценность и два Acceptance Criteria. Не переписывайте интервью целиком.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "prd_3",
+                  "prd_4",
+                  "prd_5"
+                ]
+              },
+              {
+                "id": "clarify",
+                "label": "Что осталось уточнить",
+                "hint": "До трех вопросов, зависимостей или рисков, которые нужно обсудить с ментором.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "prd_6",
+                  "prd_7",
+                  "prd_8",
+                  "prd_9",
+                  "prd_10",
+                  "prd_11"
+                ]
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "manual"
+          },
+          "points": 10,
+          "manual": true
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_3",
+      "title": "3. Выбираем MVP",
+      "description": "Определите минимальный объем первой версии.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_3",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">03</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Границы первой версии</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>1 решение по составу MVP</strong></div><ul class=\"lesson-notes\"><li>Получение в отделении согласовано для первой версии; доставка отложена.</li><li>Не придумывайте список статусов, условия комментария или полный процесс отмены.</li><li>Планы последующих этапов — ваши предложения для обсуждения.</li></ul></section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_scope_decisions",
+          "type": "decision_table",
+          "title": "Что уже известно о первой версии?",
+          "config": {
+            "scenario": "Оцените статус по интервью. Не выбирайте будущий объем за бизнес.",
+            "conditions": [
+              "Функция"
+            ],
+            "outcomes": [
+              "Согласовано для MVP",
+              "Отложено",
+              "Нужно уточнить"
+            ],
+            "rows": [
+              {
+                "id": "r1",
+                "case": "Получение карты",
+                "conditions": [
+                  "В отделении"
+                ],
+                "correctOutcome": "Согласовано для MVP"
+              },
+              {
+                "id": "r2",
+                "case": "Доставка",
+                "conditions": [
+                  "По адресу клиента"
+                ],
+                "correctOutcome": "Отложено"
+              },
+              {
+                "id": "r3",
+                "case": "Статусы",
+                "conditions": [
+                  "Полный список значений"
+                ],
+                "correctOutcome": "Нужно уточнить"
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "decision_table"
+          },
+          "points": 5,
+          "manual": false
+        },
+        {
+          "id": "act_card_onboarding_worksheet_3",
+          "type": "worksheet",
+          "title": "Ваш результат",
+          "content": "",
+          "config": {
+            "minLength": 1,
+            "allowPaste": true,
+            "prompts": [
+              {
+                "id": "roadmap",
+                "label": "Ваш вариант этапов",
+                "hint": "По 2–3 пункта: MVP, второй этап, улучшения. Кратко объясните порядок и назовите один пункт, который требует согласования.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "stage_0_0",
+                  "stage_0_1",
+                  "stage_0_2",
+                  "stage_0_3",
+                  "stage_1_0",
+                  "stage_1_1",
+                  "stage_1_2",
+                  "stage_1_3",
+                  "stage_2_0",
+                  "stage_2_1",
+                  "stage_2_2",
+                  "stage_2_3",
+                  "scope_unconfirmed"
+                ]
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "manual"
+          },
+          "points": 10,
+          "manual": true
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_4",
+      "title": "4. Рисуем процесс",
+      "description": "Покажите основной путь и одну важную ошибочную ветвь.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_4",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">04</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Основной путь и исключения</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>1 схема с двумя исходами</strong></div><ul class=\"lesson-notes\"><li>Восстановите основной путь по интервью: определите, какие действия должны предшествовать другим и почему.</li><li>Отдельно покажите компрометацию: блокировка не зависит от успеха создания заявки.</li><li>Draw.io или другой удобный инструмент. Неподтвержденные шаги пометьте вопросом.</li></ul></section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_process_order",
+          "type": "drag_order",
+          "title": "Основной путь создания заявки",
+          "config": {
+            "question": "Расставьте четыре шага основного пути. В диаграмме добавьте исключения.",
+            "correctOrder": [
+              "Выбрать карту клиента",
+              "Проверить отсутствие активной заявки",
+              "Передать данные в Card Processing Service",
+              "Показать результат создания"
+            ],
+            "steps": [
+              "Выбрать карту клиента",
+              "Проверить отсутствие активной заявки",
+              "Передать данные в Card Processing Service",
+              "Показать результат создания"
+            ]
+          },
+          "points": 5,
+          "manual": false
+        },
+        {
+          "id": "act_card_onboarding_worksheet_4",
+          "type": "worksheet",
+          "title": "Ваш результат",
+          "content": "",
+          "config": {
+            "minLength": 1,
+            "allowPaste": true,
+            "prompts": [
+              {
+                "id": "diagram_link",
+                "label": "Ссылка на диаграмму",
+                "hint": "Flowchart или BPMN. Проверьте доступ для ментора.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": []
+              },
+              {
+                "id": "diagram_notes",
+                "label": "Одно исключение и один открытый вопрос",
+                "hint": "Как обработана ошибка? Как вы отметили неподтвержденный шаг?",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "diagram_flow",
+                  "diagram_errors",
+                  "diagram_unknown"
+                ]
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "manual"
+          },
+          "points": 10,
+          "manual": true
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_5",
+      "title": "5. Собираем wireframe",
+      "description": "Нарисуйте один экран и его состояния.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_5",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">05</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Экран и его состояния</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>1 простой макет</strong></div><ul class=\"lesson-notes\"><li>Клиент и карта, причина замены, отделение получения, комментарий.</li><li>Подтверждение идентификации, информация о блокировке, кнопка создания.</li><li>Покажите успех и ошибку. Неопределенные условия отметьте в макете.</li></ul></section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_wire_states",
+          "type": "drag_mapping",
+          "title": "Состояния экрана",
+          "config": {
+            "inputMode": "drag",
+            "scenario": "Сопоставьте ситуацию и информацию, которую нужно показать.",
+            "leftTitle": "Фрагмент",
+            "rightTitle": "Соответствие",
+            "leftItems": [
+              "Создание завершилось успешно",
+              "Сервис не создал заявку",
+              "Выбрана причина «кража»"
+            ],
+            "rightItems": [
+              "Номер заявки",
+              "Понятное сообщение об ошибке",
+              "Информация о блокировке карты"
+            ],
+            "correctMapping": {
+              "Создание завершилось успешно": "Номер заявки",
+              "Сервис не создал заявку": "Понятное сообщение об ошибке",
+              "Выбрана причина «кража»": "Информация о блокировке карты"
+            }
+          },
+          "points": 5,
+          "manual": false
+        },
+        {
+          "id": "act_card_onboarding_worksheet_5",
+          "type": "worksheet",
+          "title": "Ваш результат",
+          "content": "",
+          "config": {
+            "minLength": 1,
+            "allowPaste": true,
+            "prompts": [
+              {
+                "id": "wireframe",
+                "label": "Ссылка на макет и комментарий",
+                "hint": "Один экран со состояниями успеха/ошибки. В 2–3 предложениях отметьте неподтвержденные элементы.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "wire_link",
+                  "wire_fields",
+                  "wire_states",
+                  "wire_unknown"
+                ]
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "manual"
+          },
+          "points": 10,
+          "manual": true
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_6",
+      "title": "6. Обсуждаем с ментором",
+      "description": "Обсудите готовые артефакты и зафиксируйте обратную связь.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_6",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">06</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Вопросы к обсуждению</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>1 обсуждение без новых документов</strong></div><ul class=\"lesson-notes\"><li>Используйте PRD, процесс и макет из предыдущих этапов.</li><li>Расскажите, что подтверждено интервью и что еще нужно согласовать.</li><li>Достаточно короткого обсуждения; новую презентацию готовить не нужно.</li></ul></section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_onboarding_worksheet_6",
+          "type": "worksheet",
+          "title": "Ваш результат",
+          "content": "",
+          "config": {
+            "minLength": 1,
+            "allowPaste": true,
+            "prompts": [
+              {
+                "id": "groom_questions",
+                "label": "Три вопроса на обсуждение",
+                "hint": "Используйте готовые артефакты из модулей 2–5. Что нужно решить до начала разработки?",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "groom_agenda",
+                  "groom_links"
+                ]
+              },
+              {
+                "id": "groom_feedback",
+                "label": "Короткий итог встречи",
+                "hint": "Ментор, дата и до трех договоренностей. До встречи можно написать «Обсуждение запланировано» и указать дату.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": []
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "manual"
+          },
+          "points": 10,
+          "manual": true
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_7",
+      "title": "7. Работаем с данными",
+      "description": "Найдите документы по платежу, рассчитайте возврат НДС и определите клиента с наибольшим числом счетов.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_7",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">07</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Помогаем коллегам найти данные</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>Документы по платежу · сумма возврата · счета клиента</strong></div><ul class=\"lesson-notes\"><li>Коллеги из банка обратились к вам с тремя запросами: найти документы, рассчитать сумму и сравнить клиентов.</li><li>Для каждого запроса подготовьте SQL-запрос, который вернет нужные данные.</li><li>Все имена, платежи и счета в этом разделе учебные.</li></ul><details class=\"lesson-resources\"><summary>Материалы для изучения</summary><ul><li><a href=\"https://habr.com/ru/post/480838/\" target=\"_blank\" rel=\"noopener noreferrer\">SQL: введение</a></li><li><a href=\"https://habr.com/ru/post/488054/\" target=\"_blank\" rel=\"noopener noreferrer\">Типы связей</a></li><li><a href=\"https://www.w3schools.com/sql/trysql.asp?filename=trysql_op_in\" target=\"_blank\" rel=\"noopener noreferrer\">SQL-тренажер</a></li><li><a href=\"https://www.codecademy.com/courses/learn-sql/lessons/queries/exercises/queries\" target=\"_blank\" rel=\"noopener noreferrer\">Базовые запросы</a></li><li><a href=\"https://platform.stratascratch.com/coding?code_type=3\" target=\"_blank\" rel=\"noopener noreferrer\">Дополнительная практика</a></li><li><a href=\"http://www.sql-tutorial.ru/en\" target=\"_blank\" rel=\"noopener noreferrer\">SQL Tutorial</a></li><li><a href=\"https://www.sql-ex.ru/?Lang=1\" target=\"_blank\" rel=\"noopener noreferrer\">SQL-EX</a></li></ul></details></section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_onboarding_sql_0",
+          "type": "sql_task",
+          "title": "1. Найдите документы по международному платежу",
+          "content": "Сотруднику банка нужны вложения к международным платежам, которые Ani отправила David. Найдите ссылки на документы и номера соответствующих платежей.",
+          "config": {
+            "databaseSchemaId": "sql_card_onboarding_demo",
+            "instructions": "Сотруднику банка нужны вложения к международным платежам, которые Ani отправила David. Найдите ссылки на документы и номера соответствующих платежей.\n\nУчитывайте только платежи, созданные строго после 15 января 2023 года, 00:00:00. Платежи в этот момент и раньше в выборку не входят.\n\nЧто ожидаем в результате\nПо одной строке на вложение. Две колонки в указанном порядке: FILE_URL, PAYMENT_NUMBER.",
+            "defaultQuery": "",
+            "validation": {
+              "expectedColumns": [
+                "FILE_URL",
+                "PAYMENT_NUMBER"
+              ],
+              "expectedRows": [
+                {
+                  "FILE_URL": "https://example.test/files/2.pdf",
+                  "PAYMENT_NUMBER": "IP002"
+                }
+              ],
+              "expectedQuery": "SELECT a.FILE_URL, p.PAYMENT_NUMBER\nFROM INTERNATIONAL_PAYMENT AS p\nJOIN INTERNATIONAL_PAYMENT_ATTACHMENT AS a ON a.PAYMENT_ID = p.ID\nWHERE p.SENDER = 'Ani'\n  AND p.RECIPIENT = 'David'\n  AND p.CREATED_AT > '2023-01-15 00:00:00';"
+            }
+          },
+          "validation": {
+            "expectedColumns": [
+              "FILE_URL",
+              "PAYMENT_NUMBER"
+            ],
+            "expectedRows": [
+              {
+                "FILE_URL": "https://example.test/files/2.pdf",
+                "PAYMENT_NUMBER": "IP002"
+              }
+            ],
+            "expectedQuery": "SELECT a.FILE_URL, p.PAYMENT_NUMBER\nFROM INTERNATIONAL_PAYMENT AS p\nJOIN INTERNATIONAL_PAYMENT_ATTACHMENT AS a ON a.PAYMENT_ID = p.ID\nWHERE p.SENDER = 'Ani'\n  AND p.RECIPIENT = 'David'\n  AND p.CREATED_AT > '2023-01-15 00:00:00';"
+          },
+          "points": 10,
+          "manual": false
+        },
+        {
+          "id": "act_card_onboarding_sql_1",
+          "type": "sql_task",
+          "title": "2. Рассчитайте сумму возврата НДС",
+          "content": "Бухгалтерия готовит отчет за I квартал 2023 года. Рассчитайте общую сумму платежей по возврату НДС иностранным гражданам.",
+          "config": {
+            "databaseSchemaId": "sql_card_onboarding_demo",
+            "instructions": "Бухгалтерия готовит отчет за I квартал 2023 года. Рассчитайте общую сумму платежей по возврату НДС иностранным гражданам.\n\nВключите платежи с 1 января по 31 марта 2023 года включительно, каждый на сумму не менее 1 000 драмов. Другие назначения платежа и платежи гражданам страны учитывать не нужно.\n\nЧто ожидаем в результате\nОдна строка с общей суммой. Назовите единственную колонку «TOTAL_VAT_REFUND».",
+            "defaultQuery": "",
+            "validation": {
+              "expectedColumns": [
+                "TOTAL_VAT_REFUND"
+              ],
+              "expectedRows": [
+                {
+                  "TOTAL_VAT_REFUND": 3500
+                }
+              ],
+              "expectedQuery": "SELECT SUM(AMOUNT_AMD) AS \"TOTAL_VAT_REFUND\"\nFROM BUDGET_PAYMENT\nWHERE PURPOSE = 'VAT_REFUND'\n  AND IS_FOREIGN_CITIZEN = 1\n  AND AMOUNT_AMD >= 1000\n  AND PAYMENT_DATE >= '2023-01-01'\n  AND PAYMENT_DATE < '2023-04-01';"
+            }
+          },
+          "validation": {
+            "expectedColumns": [
+              "TOTAL_VAT_REFUND"
+            ],
+            "expectedRows": [
+              {
+                "TOTAL_VAT_REFUND": 3500
+              }
+            ],
+            "expectedQuery": "SELECT SUM(AMOUNT_AMD) AS \"TOTAL_VAT_REFUND\"\nFROM BUDGET_PAYMENT\nWHERE PURPOSE = 'VAT_REFUND'\n  AND IS_FOREIGN_CITIZEN = 1\n  AND AMOUNT_AMD >= 1000\n  AND PAYMENT_DATE >= '2023-01-01'\n  AND PAYMENT_DATE < '2023-04-01';"
+          },
+          "points": 10,
+          "manual": false
+        },
+        {
+          "id": "act_card_onboarding_sql_2",
+          "type": "sql_task",
+          "title": "3. Найдите клиента с наибольшим числом счетов",
+          "content": "Команда клиентского обслуживания хочет узнать, у какого клиента открыто больше всего счетов. Найдите этого клиента и укажите количество его счетов.",
+          "config": {
+            "databaseSchemaId": "sql_card_onboarding_demo",
+            "instructions": "Команда клиентского обслуживания хочет узнать, у какого клиента открыто больше всего счетов. Найдите этого клиента и укажите количество его счетов.\n\nУчитывайте все счета в таблице. В этих данных клиент с наибольшим числом счетов только один.\n\nЧто ожидаем в результате\nОдна строка, две колонки в указанном порядке: CLIENT_CODE — код клиента, ACCOUNT_COUNT — количество счетов.",
+            "defaultQuery": "",
+            "validation": {
+              "expectedColumns": [
+                "CLIENT_CODE",
+                "ACCOUNT_COUNT"
+              ],
+              "expectedRows": [
+                {
+                  "CLIENT_CODE": "C001",
+                  "ACCOUNT_COUNT": 3
+                }
+              ],
+              "expectedQuery": "SELECT CLIENT_CODE, COUNT(*) AS ACCOUNT_COUNT\nFROM ACCOUNT\nGROUP BY CLIENT_CODE\nORDER BY ACCOUNT_COUNT DESC\nLIMIT 1;"
+            }
+          },
+          "validation": {
+            "expectedColumns": [
+              "CLIENT_CODE",
+              "ACCOUNT_COUNT"
+            ],
+            "expectedRows": [
+              {
+                "CLIENT_CODE": "C001",
+                "ACCOUNT_COUNT": 3
+              }
+            ],
+            "expectedQuery": "SELECT CLIENT_CODE, COUNT(*) AS ACCOUNT_COUNT\nFROM ACCOUNT\nGROUP BY CLIENT_CODE\nORDER BY ACCOUNT_COUNT DESC\nLIMIT 1;"
+          },
+          "points": 10,
+          "manual": false
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_8",
+      "title": "8. Читаем API-контракт",
+      "description": "Соберите контракт по описанию и разберите один ответ.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_8",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">08</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Метод, параметры и ответ</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>1 контракт · 1 вывод</strong></div><ul class=\"lesson-notes\"><li>Посмотрите видео по необходимости, затем соберите учебный REST-контракт.</li><li>Отличайте query parameters, request body и response fields.</li><li>Упражнение использует учебную спецификацию, а не недокументированные требования банка.</li></ul><details class=\"lesson-resources\"><summary>Материалы для изучения</summary><ul><li><a href=\"https://www.coursera.org/learn/apis\" target=\"_blank\" rel=\"noopener noreferrer\">Курс APIs</a></li></ul></details></section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_onboarding_api_video",
+          "type": "video",
+          "title": "API: видеоматериалы",
+          "content": "",
+          "config": {
+            "sourceType": "embed",
+            "videoUrl": "https://www.youtube.com/playlist?list=PLOspHqNVtKAAAq9pHWlEiRUVcYMCcu4X0",
+            "caption": "Плейлист из материалов онбординга. Видео можно смотреть прямо на странице."
+          },
+          "validation": {},
+          "points": 0,
+          "manual": false
+        },
+        {
+          "id": "act_card_onboarding_api_contract",
+          "type": "rest_contract",
+          "title": "REST: прочитайте и соберите учебный контракт",
+          "content": "",
+          "config": {
+            "scenario": "Учебная спецификация (не внешний API): чтение курсов доступно по GET /training/exchange-rates. Обязательный query-параметр base=USD, параметров пути и тела нет. Успех: 200, JSON {\"base\":\"USD\",\"date\":\"2026-01-15\",\"rates\":{\"EUR\":0.92,\"GBP\":0.79}}. Неверная базовая валюта: 400. Авторизация и другие ошибки не входят в эту спецификацию. Соберите контракт строго по описанию.",
+            "methodOptions": [
+              "POST",
+              "GET",
+              "PATCH",
+              "DELETE"
+            ],
+            "pathOptions": [
+              "/training/rates/{clientCode}",
+              "/training/exchange-rates",
+              "/training/exchange-rates/{base}"
+            ],
+            "pathParamOptions": [
+              "base",
+              "clientCode"
+            ],
+            "queryParamOptions": [
+              {
+                "name": "base",
+                "value": "USD"
+              },
+              {
+                "name": "currency",
+                "value": "USD"
+              },
+              {
+                "name": "clientCode",
+                "value": "C001"
+              }
+            ],
+            "requestBodyOptions": [
+              "json",
+              "none"
+            ],
+            "successStatusOptions": [
+              201,
+              200,
+              204
+            ],
+            "errorStatusOptions": [
+              400,
+              401,
+              404,
+              409,
+              500
+            ],
+            "responseFieldOptions": [
+              "base",
+              "date",
+              "rates.EUR",
+              "rates.GBP",
+              "clientCode",
+              "accountNumber"
+            ],
+            "validation": {
+              "method": "GET",
+              "path": "/training/exchange-rates",
+              "pathParams": [],
+              "queryParams": [
+                {
+                  "name": "base",
+                  "value": "USD"
+                }
+              ],
+              "requestBody": "none",
+              "successStatus": 200,
+              "errorStatuses": [
+                400
+              ],
+              "responseFields": [
+                "base",
+                "date",
+                "rates.EUR",
+                "rates.GBP"
+              ]
+            }
+          },
+          "validation": {
+            "method": "GET",
+            "path": "/training/exchange-rates",
+            "pathParams": [],
+            "queryParams": [
+              {
+                "name": "base",
+                "value": "USD"
+              }
+            ],
+            "requestBody": "none",
+            "successStatus": 200,
+            "errorStatuses": [
+              400
+            ],
+            "responseFields": [
+              "base",
+              "date",
+              "rates.EUR",
+              "rates.GBP"
+            ]
+          },
+          "points": 10,
+          "manual": false
+        },
+        {
+          "id": "act_card_onboarding_submission_6",
+          "type": "worksheet",
+          "title": "Ваш результат",
+          "content": "",
+          "config": {
+            "minLength": 1,
+            "allowPaste": true,
+            "prompts": [
+              {
+                "id": "api_takeaway",
+                "label": "Что вы поняли из контракта",
+                "hint": "В 2–3 предложениях: где передается базовая валюта, где дата и курсы, что означает ошибка. Повторно описывать всю документацию не нужно.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "api_source",
+                  "api_endpoint",
+                  "api_request",
+                  "api_response",
+                  "api_security",
+                  "api_errors"
+                ]
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "manual"
+          },
+          "points": 10,
+          "manual": true
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_9",
+      "title": "9. Проверяем API в Postman",
+      "description": "Выполните один GET-запрос и свяжите ответ с интерфейсом.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_9",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">09</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Запрос и фактический ответ</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>1 запрос · 4 UI-соответствия</strong></div><ul class=\"lesson-notes\"><li>Возьмите Frankfurter или согласованный с ментором публичный API.</li><li>Обязателен один GET: запрос, status и фактический ответ.</li><li>POST/PUT, негативные сценарии и Collection Runner — дополнительная практика по желанию.</li></ul><details class=\"lesson-resources\"><summary>Материалы для изучения</summary><ul><li><a href=\"https://frankfurter.dev/\" target=\"_blank\" rel=\"noopener noreferrer\">Frankfurter: документация</a></li><li><a href=\"https://fakerestapi.azurewebsites.net/index.html\" target=\"_blank\" rel=\"noopener noreferrer\">API для практики</a></li><li><a href=\"https://petstore.swagger.io/\" target=\"_blank\" rel=\"noopener noreferrer\">Swagger Petstore</a></li><li><a href=\"https://app.swaggerhub.com/apis/KARENHARUTYUNYAN/ForLessons/1.0.0#/user/createUsersWithArrayInput\" target=\"_blank\" rel=\"noopener noreferrer\">API из исходного задания</a></li></ul></details></section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_onboarding_api_mapping",
+          "type": "drag_mapping",
+          "title": "Сопоставление UI и API: курсы валют",
+          "config": {
+            "inputMode": "drag",
+            "scenario": "Учебный пример: GET /training/exchange-rates?base=USD возвращает {\"base\":\"USD\",\"date\":\"2026-01-15\",\"rates\":{\"EUR\":0.92,\"GBP\":0.79}}. Сопоставьте элементы экрана с запросом или ответом. Реальный ответ Frankfurter изучите самостоятельно в Postman и опишите в тетради ниже.",
+            "leftTitle": "Элемент интерфейса",
+            "rightTitle": "Элемент контракта",
+            "leftItems": [
+              "Выбор базовой валюты",
+              "Дата курса",
+              "Коды целевых валют",
+              "Значения курсов"
+            ],
+            "rightItems": [
+              "Запрос: base",
+              "Ответ: date",
+              "Ключи rates",
+              "Значения rates"
+            ],
+            "correctMapping": {
+              "Выбор базовой валюты": "Запрос: base",
+              "Дата курса": "Ответ: date",
+              "Коды целевых валют": "Ключи rates",
+              "Значения курсов": "Значения rates"
+            }
+          },
+          "points": 10,
+          "manual": false
+        },
+        {
+          "id": "act_card_onboarding_submission_7",
+          "type": "worksheet",
+          "title": "Ваш результат",
+          "content": "",
+          "config": {
+            "minLength": 1,
+            "allowPaste": true,
+            "prompts": [
+              {
+                "id": "get_evidence",
+                "label": "Ваш GET-запрос и результат",
+                "hint": "URL, дата, HTTP status и ответ или ссылка на коллекцию. Удалите секреты. Подойдет один успешный запрос.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "swagger_source",
+                  "get_request",
+                  "post_request",
+                  "put_request",
+                  "negative_case",
+                  "environments",
+                  "runner"
+                ]
+              },
+              {
+                "id": "ui_mapping",
+                "label": "Связь с экраном",
+                "hint": "На фактическом ответе покажите, откуда взять базовую валюту, дату, коды и значения курсов. Отметьте одно преобразование для UI.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": []
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "manual"
+          },
+          "points": 10,
+          "manual": true
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_10",
+      "title": "10. Предлагаем улучшение",
+      "description": "Предложите одно улучшение выбранного банковского продукта.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_10",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">10</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Проблема и ценность</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>1 предложение с критерием успеха</strong></div><ul class=\"lesson-notes\"><li>Выберите продукт вместе с ментором.</li><li>Одного предложения достаточно: проблема, пользователь, решение и ценность.</li><li>Оцените зависимости, один риск и приоритет. Не нужен полный бизнес-кейс.</li></ul></section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_onboarding_submission_9",
+          "type": "worksheet",
+          "title": "Ваш результат",
+          "content": "",
+          "config": {
+            "minLength": 1,
+            "allowPaste": true,
+            "prompts": [
+              {
+                "id": "idea",
+                "label": "Продукт, проблема и улучшение",
+                "hint": "Название продукта, целевой пользователь и одно предлагаемое решение.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "product",
+                  "problem",
+                  "solution"
+                ]
+              },
+              {
+                "id": "idea_value",
+                "label": "Почему стоит сделать",
+                "hint": "Ожидаемая ценность и показатель успеха; приоритет; одна зависимость и один риск.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "value",
+                  "dependencies",
+                  "risks",
+                  "priority",
+                  "feedback"
+                ]
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "manual"
+          },
+          "points": 10,
+          "manual": true
+        }
+      ]
+    },
+    {
+      "id": "mod_card_onboarding_read_11",
+      "title": "11. Сравниваем решения",
+      "description": "Сравните текущий подход с одной альтернативой.",
+      "type": "assessment",
+      "activities": [
+        {
+          "id": "act_card_onboarding_read_11",
+          "type": "html_content",
+          "title": "Материалы кейса",
+          "content": "<section class=\"lesson-page\"><header class=\"lesson-heading\"><span class=\"lesson-number\">11</span><div><span class=\"interview-eyebrow\">Замена банковской карты / Практика</span><h3>Компромиссы и рекомендация</h3></div></header><div class=\"lesson-outcome\"><span>Результат этапа</span><strong>1 сравнение · 1 рекомендация</strong></div><ul class=\"lesson-notes\"><li>Альтернатива может менять процесс, канал или способ автоматизации.</li><li>Сравнивайте по группам критериев, не пишите отдельное эссе на каждый.</li><li>Оценки стоимости и сроков могут быть качественными; предположения обозначьте явно.</li></ul></section>",
+          "config": {},
+          "points": 0
+        },
+        {
+          "id": "act_card_onboarding_submission_10",
+          "type": "worksheet",
+          "title": "Ваш результат",
+          "content": "",
+          "config": {
+            "minLength": 1,
+            "allowPaste": true,
+            "prompts": [
+              {
+                "id": "compare",
+                "label": "Два решения: короткое сравнение",
+                "hint": "Основное и альтернативное решение. Сравните по трем группам: UX и сроки; стоимость и интеграции; безопасность, сопровождение и риски.",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "baseline",
+                  "alternative",
+                  "comparison_0",
+                  "comparison_1",
+                  "comparison_2",
+                  "comparison_3",
+                  "comparison_4",
+                  "comparison_5",
+                  "comparison_6",
+                  "comparison_7"
+                ]
+              },
+              {
+                "id": "recommendation",
+                "label": "Ваш выбор и условия",
+                "hint": "Какой вариант рекомендуете и почему? Что нужно подтвердить перед реализацией?",
+                "placeholder": "Короткий ответ по пунктам…",
+                "legacyIds": [
+                  "decisions"
+                ]
+              }
+            ]
+          },
+          "validation": {
+            "validationMode": "manual"
+          },
+          "points": 10,
+          "manual": true
+        }
+      ]
+    }
+  ],
+  "retiredActivities": [
+    {
+      "id": "act_card_onboarding_submission_8",
+      "title": "UI → API mapping курсов валют",
+      "moduleId": "mod_card_onboarding_read_9"
+    }
+  ]
+}

@@ -16,8 +16,40 @@ const int userSessionTtlSeconds = 14 * 24 * 60 * 60;
 
 InitDb();
 
+if (args.Contains("--reset-to-card-onboarding"))
+{
+    using var conn = OpenDb();
+    using var transaction = conn.BeginTransaction();
+    using var command = conn.CreateCommand();
+    command.Transaction = transaction;
+    command.CommandText = """
+        DELETE FROM assessmentTaskAttempts;
+        DELETE FROM assessmentAttempts;
+        DELETE FROM assessmentAttemptOverrides;
+        DELETE FROM assessmentAttemptSessions;
+        DELETE FROM learningEvents;
+        DELETE FROM answerDrafts;
+        DELETE FROM activities WHERE courseId <> 'course_ba_card_replacement_onboarding' OR courseId IS NULL;
+        DELETE FROM modules WHERE courseId <> 'course_ba_card_replacement_onboarding' OR courseId IS NULL;
+        DELETE FROM courses WHERE courseId <> 'course_ba_card_replacement_onboarding';
+        DELETE FROM sqlSchemas WHERE schemaId <> 'sql_card_onboarding_demo';
+        """;
+    command.ExecuteNonQuery();
+    transaction.Commit();
+    Console.WriteLine("Only card onboarding retained; assessment history and drafts cleared.");
+    return;
+}
+
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        var extension = Path.GetExtension(context.File.Name);
+        if (extension is ".html" or ".js" or ".css")
+            context.Context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+    }
+});
 
 app.MapGet("/api/app-data", (HttpRequest request) =>
 {
@@ -735,8 +767,44 @@ CREATE TABLE IF NOT EXISTS answerDrafts (
     AddColumnIfMissing(conn, "assessmentTaskAttempts", "reviewedBy", "TEXT");
     AddColumnIfMissing(conn, "assessmentTaskAttempts", "reviewedAt", "TEXT");
     AddColumnIfMissing(conn, "assessmentTaskAttempts", "reviewComment", "TEXT");
-    SeedAssessmentDemoData(conn);
-    NormalizeAssessmentDemoData(conn);
+    SeedCardOnboarding(conn);
+}
+
+void SeedCardOnboarding(SqliteConnection conn)
+{
+    var path = Path.Combine(app.Environment.ContentRootPath, "content", "card-onboarding.json");
+    if (!File.Exists(path)) return;
+    var pack = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+    var courseId = S(pack, "courseId");
+    if (Rows(conn, "SELECT 1 FROM courses WHERE courseId=$id", new() { ["$id"] = courseId }).Any()) return;
+    using var transaction = conn.BeginTransaction();
+    void Insert(string sql, Dictionary<string, object?> values)
+    {
+        using var command = conn.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        foreach (var value in values) command.Parameters.AddWithValue(value.Key, value.Value ?? DBNull.Value);
+        command.ExecuteNonQuery();
+    }
+    Insert("INSERT INTO courses(courseId,title,description,category,level,displayOrder,passingScore,status) VALUES($id,$title,$description,'Onboarding','Beginner',100,70,'active')",
+        new() { ["$id"] = courseId, ["$title"] = S(pack,"title"), ["$description"] = S(pack,"description") });
+    Insert("INSERT OR IGNORE INTO sqlSchemas(schemaId,title,description,initSql,status) VALUES('sql_card_onboarding_demo','Card onboarding: synthetic dataset','Synthetic training data; original SQLite attachment was not supplied.',$sql,'active')", new() { ["$sql"] = S(pack,"schema") });
+    var order = 0;
+    foreach (var node in pack["modules"]!.AsArray())
+    {
+        var module = node!.AsObject();
+        var assessment = S(module,"type") == "assessment";
+        Insert("INSERT INTO modules(moduleId,courseId,title,description,displayOrder,status,moduleType,maxAttempts,passingScore,reviewMode,lockAfterSubmit,isTimed) VALUES($id,$course,$title,$description,$order,'active',$type,3,70,'mixed','False','False')",
+            new() { ["$id"] = S(module,"id"), ["$course"] = courseId, ["$title"] = S(module,"title"), ["$description"] = S(module,"description"), ["$order"] = ++order, ["$type"] = assessment ? "assessment" : "learning" });
+        var activityOrder = 0;
+        foreach (var item in module["activities"]!.AsArray())
+        {
+            var activity = item!.AsObject();
+            Insert("INSERT INTO activities(activityId,courseId,moduleId,activityType,title,content,configJson,displayOrder,status,validationJson,points,manualReviewRequired) VALUES($id,$course,$module,$type,$title,$content,$config,$order,'active',$validation,$points,$manual)",
+                new() { ["$id"] = S(activity,"id"), ["$course"] = courseId, ["$module"] = S(module,"id"), ["$type"] = S(activity,"type"), ["$title"] = S(activity,"title"), ["$content"] = S(activity,"content"), ["$config"] = activity["config"]!.ToJsonString(), ["$validation"] = activity["validation"]?.ToJsonString() ?? "{}", ["$order"] = ++activityOrder, ["$points"] = I(activity,"points"), ["$manual"] = Truthy(activity["manual"]).ToString() });
+        }
+    }
+    transaction.Commit();
 }
 
 void SeedAssessmentDemoData(SqliteConnection conn)
@@ -1148,8 +1216,8 @@ Dictionary<string, object?> ActivityPayload(JsonObject payload, Dictionary<strin
 
 void ValidateActivityType(Dictionary<string, object?> module, string activityType)
 {
-    var learning = new HashSet<string> { "html_content", "text", "content", "image", "practice_quiz", "drag_mapping", "drag_order", "sql_practice", "python_practice", "rest_contract", "decision_table", "impact_analysis" };
-    var assessment = new HashSet<string> { "quiz", "drag_mapping", "drag_order", "decision_table", "impact_analysis", "sql_task", "python_task", "open_answer", "rest_contract", "experience_evidence" };
+    var learning = new HashSet<string> { "html_content", "text", "content", "image", "video", "practice_quiz", "drag_mapping", "drag_order", "sql_practice", "python_practice", "rest_contract", "decision_table", "impact_analysis" };
+    var assessment = new HashSet<string> { "html_content", "video", "worksheet", "quiz", "drag_mapping", "drag_order", "decision_table", "impact_analysis", "sql_task", "python_task", "open_answer", "rest_contract", "experience_evidence" };
     var allowed = ObjString(module, "moduleType") == "assessment" ? assessment : learning;
     if (!allowed.Contains(activityType))
         throw new AppError($"Activity type {activityType} is not allowed for module type {ObjString(module, "moduleType")}.");
@@ -1270,6 +1338,7 @@ Dictionary<string, object?> CompleteAssessmentAttempt(
     Dictionary<string, object?>? session,
     int maxAttempts)
 {
+    tasks = tasks.Where(task => ObjString(task, "activityType") is not ("html_content" or "video")).ToList();
     var results = new Dictionary<string, JsonObject>();
     foreach (var node in taskResults)
     {

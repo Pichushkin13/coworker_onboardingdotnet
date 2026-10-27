@@ -105,6 +105,12 @@ function embeddableVideoUrl(url) {
       const parts = parsed.pathname.split("/").filter(Boolean);
       if (parsed.pathname === "/watch") videoId = parsed.searchParams.get("v") || "";
       else if (parts[0] === "shorts" || parts[0] === "embed" || parts[0] === "live") videoId = parts[1] || "";
+      const playlist = parsed.searchParams.get("list");
+      if (playlist && (!videoId || videoId === "videoseries")) {
+        const embed = new URL("https://www.youtube-nocookie.com/embed/videoseries");
+        embed.searchParams.set("list", playlist);
+        return embed.toString();
+      }
     }
 
     if (videoId) {
@@ -183,15 +189,21 @@ function collectDraftAnswer(activity) {
   if (activity.activityType === "open_answer") {
     return { type: "open_answer", text: $(`open_${activity.activityId}`)?.value || "" };
   }
-  if (activity.activityType === "experience_evidence") {
+  if (["experience_evidence", "worksheet"].includes(activity.activityType)) {
     const responses = {};
     (activity.config.prompts || []).forEach((prompt, i) => {
       responses[prompt.id || `p${i + 1}`] = $(`evidence_${activity.activityId}_${i}`)?.value || "";
     });
-    return { type: "experience_evidence", responses };
+    return { type: activity.activityType, responses };
   }
   if (activity.activityType === "decision_table") {
     return { type: "decision_table", answers: decisionTableAnswer(activity.activityId, activity.config.rows || []) };
+  }
+  if (activity.activityType === "drag_mapping") {
+    return { type: "drag_mapping", mapping: mappingAnswer(activity.activityId) };
+  }
+  if (activity.activityType === "rest_contract") {
+    return { type: "rest_contract", contract: restContractAnswer(activity.activityId) };
   }
   if (activity.activityType === "impact_analysis") {
     return { type: "impact_analysis", selected: checkedValues(`impact_${activity.activityId}`) };
@@ -350,10 +362,10 @@ function renderMain() {
     : renderActivityList(module, tasks, false);
 
   $("content").innerHTML = `
-    <section class="module-page">
+    <section class="module-page ${module.courseId === "course_ba_card_replacement_onboarding" ? "onboarding-page" : ""}">
       <div class="module-header">
         <div>
-          <span class="badge ${module.moduleType === "assessment" ? "black" : ""}">${module.moduleType === "assessment" ? "Assessment module" : "Learning module"}</span>
+          <span class="badge ${module.moduleType === "assessment" ? "black" : ""}">${tasks.some(a => a.activityType === "worksheet") ? "Практика с ментором" : module.moduleType === "assessment" ? "Assessment module" : "Learning module"}</span>
           <h2>${esc(module.title)}</h2>
           <div class="muted">${esc(module.description || "")}</div>
         </div>
@@ -365,6 +377,7 @@ function renderMain() {
   `;
   initInteractiveActivities();
   applyDrafts(module.moduleId);
+  activities(module.moduleId).filter(a => a.activityType === "worksheet").forEach(updateWorksheetProgress);
 }
 
 function renderActivityList(module, tasks, assessment) {
@@ -419,7 +432,7 @@ function renderActivity(a, assessment) {
   if (a.activityType === "sql_practice" || a.activityType === "sql_task") return renderSql(a, assessment);
   if (a.activityType === "python_practice" || a.activityType === "python_task") return renderPython(a, assessment);
   if (a.activityType === "open_answer") return renderOpenAnswer(a, assessment);
-  if (a.activityType === "experience_evidence") return renderExperienceEvidence(a, assessment);
+  if (["experience_evidence", "worksheet"].includes(a.activityType)) return renderExperienceEvidence(a, assessment);
   if (a.activityType === "rest_contract") return renderRestContract(a, assessment);
   if (a.activityType === "assessment_block") return `<div class="result warn">Assessment block is represented by the module itself in this version.</div>`;
   return `<div class="result warn">Unsupported activity type: ${esc(a.activityType)}</div>`;
@@ -455,8 +468,10 @@ function renderVideo(a) {
 
   return `
     <figure class="video-block">
+      ${a.title ? `<h3>${esc(a.title)}</h3>` : ""}
       <div class="video-frame">${media}</div>
       ${caption ? `<figcaption>${esc(caption)}</figcaption>` : ""}
+      ${shouldEmbed ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Открыть видео в отдельной вкладке</a>` : ""}
     </figure>
   `;
 }
@@ -499,18 +514,34 @@ function renderQuiz(a, assessment) {
 function renderMapping(a, assessment) {
   const cfg = a.config || {};
   const rightItems = shuffle(cfg.rightItems || []);
+  if (cfg.inputMode === "select") {
+    return `<div class="task-card mapping-select">
+      <h3>${esc(a.title || "Mapping")}</h3>
+      ${cfg.scenario ? `<p class="muted">${esc(cfg.scenario)}</p>` : ""}
+      ${(cfg.leftItems || []).map((target, i) => `<div class="field">
+        <label for="mapping_${esc(a.activityId)}_${i}">${esc(target)}</label>
+        <select id="mapping_${esc(a.activityId)}_${i}" data-mapping-target="${esc(target)}">
+          <option value="">Выберите соответствие…</option>
+          ${rightItems.map(value => `<option value="${esc(value)}">${esc(value)}</option>`).join("")}
+        </select>
+      </div>`).join("")}
+      ${!assessment ? `<button class="btn" onclick="checkMapping('${esc(a.activityId)}')">Проверить</button><div id="result_${esc(a.activityId)}"></div>` : ""}
+    </div>`;
+  }
   return `
-    <div class="task-card">
+    <div class="task-card mapping-drag">
+      <h3>${esc(a.title || "Сопоставление")}</h3>
+      ${cfg.scenario ? `<p class="muted">${esc(cfg.scenario)}</p>` : ""}
       <div class="drag-grid">
         <div class="drag-box">
           <h3>${esc(cfg.rightTitle || "Values")}</h3>
           <div class="drop-zone pool">
-            ${rightItems.map((v) => `<div class="drag-item" draggable="true" data-value="${esc(v)}">${esc(v)}</div>`).join("")}
+            ${rightItems.map((v) => `<div class="drag-item" draggable="true" tabindex="0" role="button" aria-pressed="false" data-value="${esc(v)}"><span class="drag-grip" aria-hidden="true">⠿</span>${esc(v)}</div>`).join("")}
           </div>
         </div>
         <div class="drag-box">
           <h3>${esc(cfg.leftTitle || "Targets")}</h3>
-          ${(cfg.leftItems || []).map((v) => `<b>${esc(v)}</b><div class="drop-zone mapping-zone" data-target="${esc(v)}"></div>`).join("")}
+          ${(cfg.leftItems || []).map((v) => `<div class="mapping-target"><b>${esc(v)}</b><div class="drop-zone mapping-zone" tabindex="0" role="button" aria-label="${esc(v)}" data-target="${esc(v)}"></div></div>`).join("")}
         </div>
       </div>
       ${!assessment ? `<button class="btn" onclick="checkMapping('${esc(a.activityId)}')">Check mapping</button><div id="result_${esc(a.activityId)}"></div>` : ""}
@@ -524,10 +555,10 @@ function renderOrder(a, assessment) {
   return `
     <div class="task-card">
       <h3>${esc(cfg.question || a.title || "Put steps in order")}</h3>
-      <div class="muted">Order is read from top to bottom.</div>
+      <div class="muted">Порядок шагов — сверху вниз.</div>
       <div class="order-list" id="order_${esc(a.activityId)}">
         ${steps.map((s) => `
-          <div class="drag-item order-item" draggable="true" data-value="${esc(s)}">
+          <div class="drag-item order-item" draggable="true" tabindex="0" data-value="${esc(s)}">
             <span class="order-number"></span>
             <span>${esc(s)}</span>
           </div>`).join("")}
@@ -611,13 +642,13 @@ function renderSql(a, assessment) {
   return `
     <div class="task-card">
       <h3>${esc(a.title || "SQL task")}</h3>
-      <div class="muted">${esc(a.config.instructions || a.content || "")}</div>
+      <div class="sql-task-brief">${esc(a.config.instructions || a.content || "")}</div>
       ${state.adminToken ? renderSqlExpected(a.config.validation || a.validation || {}) : ""}
       <div class="sql-controls">
         <button class="btn ghost small" id="db_btn_${esc(a.activityId)}" onclick="toggleTables('${esc(a.activityId)}','${esc(a.config.databaseSchemaId || "")}')">View demo tables</button>
       </div>
       <div id="db_${esc(a.activityId)}"></div>
-      <div class="field"><textarea class="sql-editor" id="sql_${esc(a.activityId)}"${manualInputAttrs(assessment)}>${esc(a.config.defaultQuery || "")}</textarea></div>
+      <div class="field"><label for="sql_${esc(a.activityId)}">Ваш SQL-запрос</label><textarea class="sql-editor" id="sql_${esc(a.activityId)}" placeholder="Введите SQL-запрос"${manualInputAttrs(assessment)}>${esc(a.config.defaultQuery || "")}</textarea></div>
       ${manualInputHint(assessment)}
       <button class="btn" onclick="runSql('${esc(a.activityId)}')">Run SQL</button>
       <div id="sql_error_${esc(a.activityId)}"></div>
@@ -658,6 +689,7 @@ function renderSqlExpected(validation) {
   const rows = validation.expectedRows || [];
   return `
     <div class="expected-answer">
+      ${validation.expectedQuery ? `<b>Пример запроса для ментора</b><pre class="review-output">${esc(validation.expectedQuery)}</pre><p class="muted">Один из корректных вариантов. Автопроверка сравнивает результат, а не текст запроса.</p>` : ""}
       <b>Expected result</b>
       <div class="muted">Columns: ${esc(columns.join(", ") || "Not configured")}</div>
       ${rows.length ? tableHtml({ columns, rows }) : `<div class="muted">Rows are not configured.</div>`}
@@ -666,6 +698,7 @@ function renderSqlExpected(validation) {
 }
 
 function renderExperienceEvidence(a, assessment) {
+  const worksheet = a.activityType === "worksheet";
   if (assessment && !state.adminToken) {
     const gate = evidenceGateStatus(a);
     if (!gate.unlocked) {
@@ -675,17 +708,19 @@ function renderExperienceEvidence(a, assessment) {
   const prompts = a.config.prompts || defaultEvidencePrompts();
   const min = Number(a.config.minLength || 60);
   return `
-    <div class="task-card evidence-form" data-evidence-activity="${esc(a.activityId)}">
+    <div class="task-card evidence-form ${worksheet ? "worksheet-form" : ""}" data-evidence-activity="${esc(a.activityId)}">
       <h3>${esc(a.title || "Experience evidence")}</h3>
       ${a.content || a.config.instructions ? `<div class="muted">${esc(a.content || a.config.instructions)}</div>` : ""}
+      ${worksheet ? `<div class="worksheet-status" id="worksheet_status_${esc(a.activityId)}" aria-live="polite"></div>` : ""}
       ${prompts.map((prompt, i) => `
-        <div class="field evidence-field">
-          <label>${esc(prompt.label || prompt.question || `Evidence ${i + 1}`)}</label>
+        <details class="field evidence-field" open>
+          <summary>${esc(i + 1)}. ${esc(prompt.label || prompt.question || `Evidence ${i + 1}`)}</summary>
           ${prompt.hint ? `<div class="muted">${esc(prompt.hint)}</div>` : ""}
-          <textarea id="evidence_${esc(a.activityId)}_${i}" placeholder="${esc(prompt.placeholder || "Describe a concrete example, your role, artifacts, stakeholders, and result.")}"${manualInputAttrs(assessment)}></textarea>
-        </div>
+          <textarea aria-label="${esc(prompt.label || prompt.question || `Evidence ${i + 1}`)}" id="evidence_${esc(a.activityId)}_${i}" placeholder="${esc(prompt.placeholder || "Describe a concrete example, your role, artifacts, stakeholders, and result.")}"${manualInputAttrs(assessment && !a.config.allowPaste)}></textarea>
+        </details>
       `).join("")}
-      <div class="manual-input-hint">${assessment && !state.adminToken ? `Each field should be typed manually. Minimum recommended length: ${esc(min)} characters.` : "Reviewer uses this evidence to confirm senior levels."}</div>
+      ${!worksheet ? `<div class="manual-input-hint">${assessment && !state.adminToken ? `Each field should be typed manually. Minimum recommended length: ${esc(min)} characters.` : "Reviewer uses this evidence to confirm senior levels."}</div>` : ""}
+      ${worksheet && !state.adminToken ? `<div class="worksheet-actions"><button class="btn" onclick="saveWorksheet('${esc(a.activityId)}')">Сохранить ответы</button><span id="worksheet_saved_${esc(a.activityId)}" role="status"></span></div>` : ""}
     </div>
   `;
 }
@@ -784,7 +819,7 @@ function automaticScoreRatio(activity) {
 
 function refreshConditionalEvidence(force = false) {
   if (state.adminToken) return;
-  activities(state.selectedModule).filter((activity) => activity.activityType === "experience_evidence").forEach((activity) => {
+  activities(state.selectedModule).filter((activity) => ["experience_evidence", "worksheet"].includes(activity.activityType)).forEach((activity) => {
     const brick = document.querySelector(`#brick_${css(activity.activityId)}`);
     const surface = brick?.querySelector(".brick-surface");
     if (!surface) return;
@@ -906,6 +941,7 @@ function renderAssessmentModule(module, tasks) {
   const timed = truthy(module.isTimed);
   const placement = module.reviewMode === "placement";
   const leveling = module.reviewMode === "leveling";
+  const worksheet = tasks.some(a => a.activityType === "worksheet");
   const activeAttempt = progress && progress.activeAttempt;
   const canSubmit = !progress || progress.canSubmit;
   const attemptsText = `${progress ? progress.attemptsUsed : 0} / ${progress ? progress.effectiveMaxAttempts : (module.maxAttempts || 1)}`;
@@ -931,20 +967,20 @@ function renderAssessmentModule(module, tasks) {
   const assessmentHtml = `
     <div class="assessment">
       <div class="assessment-intro">
-        <h3>${esc(module.title)}</h3>
-        <div class="muted">${placement
+        ${worksheet ? "" : `<h3>${esc(module.title)}</h3>`}
+        <div class="muted">${worksheet ? "" : placement
           ? "Choose the option that best matches the respondent's current behavior. The system will recommend a level automatically."
           : leveling
             ? "Complete the skill checks. The system will calculate the highest confirmed level and show which level is not yet confirmed."
           : `One submit consumes one attempt. Passing score: ${esc(module.passingScore || 0)}%.`}</div>
-        <div class="badge grey">Attempts: ${esc(attemptsText)}</div>
+        <div class="badge grey">${worksheet ? "Отправлено" : "Attempts"}: ${esc(attemptsText)}</div>
         ${placement ? `<div class="badge grey">Placement assessment</div>` : ""}
         ${leveling ? `<div class="badge grey">Level assessment</div>` : ""}
         ${timed && activeAttempt && !state.adminToken ? `<div class="assessment-timer"><span>Time remaining</span><span class="timer-value" id="assessment_timer">--:--</span></div>` : ""}
         ${timed && state.adminToken ? `<div class="badge grey">Timed: ${esc(module.timeLimitMinutes || 1)} min (admin preview)</div>` : ""}
       </div>
       ${renderActivityList(module, visibleTasks, true)}
-      ${!state.adminToken ? `<button class="btn" ${canSubmit ? "" : "disabled"} onclick="submitAssessment('${esc(module.moduleId)}', false)">${placement ? "Submit placement assessment" : leveling ? "Submit level assessment" : "Submit assessment module"}</button><div id="assessment_result"></div>` : ""}
+      ${!state.adminToken ? `<button class="btn" ${canSubmit ? "" : "disabled"} onclick="submitAssessment('${esc(module.moduleId)}', false)">${worksheet ? "Отправить ментору" : placement ? "Submit placement assessment" : leveling ? "Submit level assessment" : "Submit assessment module"}</button><div id="assessment_result"></div>` : ""}
     </div>
   `;
 
@@ -1061,11 +1097,68 @@ function initInteractiveActivities() {
   initDraftListeners();
   initManualInputOnly();
   initEvidenceRefreshInputs();
+  initInterview();
   refreshOrderNumbers();
 }
 
+function updateWorksheetProgress(activity) {
+  const box = $(`worksheet_status_${activity.activityId}`);
+  if (!box) return;
+  const prompts = activity.config.prompts || [];
+  const count = prompts.filter((prompt, i) => $(`evidence_${activity.activityId}_${i}`)?.value.trim()).length;
+  box.textContent = `Заполнено ${count} из ${prompts.length}`;
+}
+
+async function saveWorksheet(id) {
+  const activity = findActivity(id);
+  const status = $(`worksheet_saved_${id}`);
+  if (!activity || !status) return;
+  clearTimeout(state.draftTimers[id]);
+  const answer = collectDraftAnswer(activity);
+  setDraftLocal(activity.moduleId, id, answer);
+  status.textContent = "Сохраняем…";
+  try {
+    await api("/api/draft/save", "POST", { moduleId: activity.moduleId, activityId: id, answer });
+    status.textContent = "Ответы сохранены";
+  } catch (error) {
+    status.textContent = `Не удалось сохранить: ${error.message}`;
+  }
+}
+
+function initInterview() {
+  document.querySelectorAll("[data-interview]").forEach(interview => {
+    interview.querySelectorAll("[data-interview-topic]").forEach(link => {
+      link.onclick = event => {
+        const target = $(link.dataset.interviewTopic);
+        if (!target) return;
+        event.preventDefault();
+        target.open = true;
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+    });
+    interview.querySelectorAll("[data-interview-expand]").forEach(button => {
+      button.onclick = () => interview.querySelectorAll(".interview-topic").forEach(topic => {
+        topic.open = button.dataset.interviewExpand === "true";
+      });
+    });
+    interview.querySelectorAll("[data-quote-author]").forEach(button => {
+      button.onclick = () => {
+        const worksheet = activities(state.selectedModule).find(a => a.activityType === "worksheet");
+        const field = worksheet && $(`evidence_${worksheet.activityId}_0`);
+        if (!field) return;
+        const quote = button.closest(".interview-message").querySelector(".interview-message-text").textContent.trim();
+        field.value = [field.value.trim(), `${button.dataset.quoteAuthor}: «${quote}»`].filter(Boolean).join("\n\n");
+        field.closest("details").open = true;
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+        const feedback = interview.querySelector("[data-interview-feedback]");
+        if (feedback) feedback.textContent = "Цитата добавлена в поле «Подтвержденные требования»";
+      };
+    });
+  });
+}
+
 function initEvidenceRefreshInputs() {
-  document.querySelectorAll("input[name^='rest_'], select[id^='rest_'], select[id^='dt_'], input[name^='impact_'], input[name^='q_']").forEach((input) => {
+  document.querySelectorAll("input[name^='rest_'], select[id^='rest_'], select[id^='dt_'], select[data-mapping-target], input[name^='impact_'], input[name^='q_']").forEach((input) => {
     input.addEventListener("change", scheduleEvidenceRefresh);
   });
 }
@@ -1108,10 +1201,15 @@ function initDraftListeners() {
     } else if (activity.activityType === "open_answer") {
       const input = $(`open_${activity.activityId}`);
       if (input) input.oninput = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
-    } else if (activity.activityType === "experience_evidence") {
+    } else if (["experience_evidence", "worksheet"].includes(activity.activityType)) {
       (activity.config.prompts || defaultEvidencePrompts()).forEach((prompt, i) => {
         const input = $(`evidence_${activity.activityId}_${i}`);
-        if (input) input.oninput = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+        if (input) input.oninput = () => {
+          saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+          updateWorksheetProgress(activity);
+          const saved = $(`worksheet_saved_${activity.activityId}`);
+          if (saved) saved.textContent = "Изменения сохраняются в черновик";
+        };
       });
     } else if (activity.activityType === "decision_table") {
       (activity.config.rows || []).forEach((row, i) => {
@@ -1120,6 +1218,10 @@ function initDraftListeners() {
       });
     } else if (activity.activityType === "impact_analysis") {
       document.querySelectorAll(`[name="impact_${css(activity.activityId)}"]`).forEach((input) => {
+        input.onchange = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+      });
+    } else if (["rest_contract", "drag_mapping"].includes(activity.activityType)) {
+      document.querySelectorAll(`#brick_${css(activity.activityId)} select, #brick_${css(activity.activityId)} input[type='checkbox']`).forEach(input => {
         input.onchange = () => saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
       });
     } else if (activity.activityType === "sql_task") {
@@ -1143,12 +1245,20 @@ function applyDrafts(moduleId) {
     } else if (activity.activityType === "open_answer") {
       const input = $(`open_${activity.activityId}`);
       if (input && draft.text) input.value = draft.text;
-    } else if (activity.activityType === "experience_evidence") {
+    } else if (["experience_evidence", "worksheet"].includes(activity.activityType)) {
       (activity.config.prompts || defaultEvidencePrompts()).forEach((prompt, i) => {
         const input = $(`evidence_${activity.activityId}_${i}`);
         const key = prompt.id || `p${i + 1}`;
-        if (input && draft.responses?.[key]) input.value = draft.responses[key];
+        if (input) {
+          const legacy = (prompt.legacyIds || []).filter(id => id !== key).map(id => draft.responses?.[id]).filter(Boolean);
+          input.value = [draft.responses?.[key], ...legacy].filter(Boolean).join("\n\n");
+        }
       });
+    } else if (activity.activityType === "drag_order" && Array.isArray(draft.order)) {
+      const list = $("order_" + activity.activityId);
+      const items = list ? [...list.querySelectorAll('.order-item')] : [];
+      draft.order.forEach(value => { const item = items.find(item => item.dataset.value === value); if (item) list.appendChild(item); });
+      refreshOrderNumbers();
     } else if (activity.activityType === "decision_table") {
       (activity.config.rows || []).forEach((row, i) => {
         const input = $(`dt_${activity.activityId}_${i}`);
@@ -1159,6 +1269,30 @@ function applyDrafts(moduleId) {
       document.querySelectorAll(`[name="impact_${css(activity.activityId)}"]`).forEach((input) => {
         input.checked = (draft.selected || []).includes(input.value);
       });
+    } else if (activity.activityType === "drag_mapping") {
+      document.querySelectorAll(`#brick_${css(activity.activityId)} [data-mapping-target]`).forEach(input => {
+        input.value = draft.mapping?.[input.dataset.mappingTarget] || "";
+      });
+      const brick = $("brick_" + activity.activityId);
+      const pool = brick?.querySelector('.pool');
+      if (pool) {
+        brick.querySelectorAll('.mapping-zone .drag-item').forEach(item => pool.appendChild(item));
+        brick.querySelectorAll('.mapping-zone').forEach(zone => {
+          const item = [...pool.querySelectorAll('.drag-item')].find(item => item.dataset.value === draft.mapping?.[zone.dataset.target]);
+          if (item) zone.appendChild(item);
+        });
+      }
+    } else if (activity.activityType === "rest_contract" && draft.contract) {
+      const answer = draft.contract;
+      for (const [key, property] of [["method", "method"], ["path", "path"], ["body", "requestBody"], ["success", "successStatus"]]) {
+        const input = $(`rest_${key}_${activity.activityId}`);
+        if (input && answer[property] !== undefined) input.value = String(answer[property]);
+      }
+      for (const [group, property] of [["path_params", "pathParams"], ["query_params", "queryParams"], ["error_statuses", "errorStatuses"], ["response_fields", "responseFields"]]) {
+        document.querySelectorAll(`[name="rest_${group}_${css(activity.activityId)}"]`).forEach(input => {
+          input.checked = (answer[property] || []).map(String).includes(input.value);
+        });
+      }
     } else if (activity.activityType === "sql_task") {
       const input = $(`sql_${activity.activityId}`);
       if (input && draft.query) input.value = draft.query;
@@ -1167,40 +1301,49 @@ function applyDrafts(moduleId) {
 }
 
 function initMappingDrag(container) {
-  container.querySelectorAll(".drag-item:not(.order-item)").forEach((el) => {
-    el.ondragstart = (event) => {
-      state.dragItem = el;
-      el.classList.add("dragging");
-      if (event.dataTransfer) event.dataTransfer.setData("text/plain", el.dataset.value || "");
+  let selected = null;
+  const place = (zone, item) => {
+    if (!item || item.closest('.activity-unit') !== container) return;
+    const existing = zone.classList.contains('mapping-zone') && zone.querySelector('.drag-item');
+    if (existing && existing !== item) container.querySelector('.pool')?.appendChild(existing);
+    zone.appendChild(item);
+    item.classList.remove('is-selected');
+    item.setAttribute('aria-pressed', 'false');
+    selected = null;
+    const activity = findActivity(container.dataset.activityId);
+    if (activity) saveDraft(activity.moduleId, activity.activityId, collectDraftAnswer(activity));
+    scheduleEvidenceRefresh();
+  };
+  container.querySelectorAll(".drag-item:not(.order-item)").forEach(el => {
+    el.onclick = event => {
+      event.stopPropagation();
+      container.querySelectorAll('.is-selected').forEach(item => { item.classList.remove('is-selected'); item.setAttribute('aria-pressed','false'); });
+      selected = selected === el ? null : el;
+      el.classList.toggle('is-selected', selected === el);
+      el.setAttribute('aria-pressed', String(selected === el));
     };
-    el.ondragend = () => {
-      el.classList.remove("dragging");
-      container.querySelectorAll(".drop-zone").forEach((zone) => zone.classList.remove("over"));
-      state.dragItem = null;
-    };
+    el.onkeydown = event => { if (['Enter',' '].includes(event.key)) { event.preventDefault(); event.stopPropagation(); el.click(); } };
+    el.ondragstart = event => { state.dragItem = el; el.classList.add('dragging'); event.dataTransfer?.setData('text/plain', el.dataset.value); };
+    el.ondragend = () => { el.classList.remove('dragging'); container.querySelectorAll('.over').forEach(zone => zone.classList.remove('over')); state.dragItem = null; };
   });
-  container.querySelectorAll(".drop-zone").forEach((zone) => {
-    zone.ondragover = (event) => {
-      event.preventDefault();
-      zone.classList.add("over");
-    };
-    zone.ondragleave = () => zone.classList.remove("over");
-    zone.ondrop = (event) => {
-      event.preventDefault();
-      zone.classList.remove("over");
-      if (!state.dragItem) return;
-      if (zone.classList.contains("mapping-zone")) {
-        const existing = zone.querySelector(".drag-item");
-        if (existing && existing !== state.dragItem) container.querySelector(".pool")?.appendChild(existing);
-      }
-      zone.appendChild(state.dragItem);
-      scheduleEvidenceRefresh();
-    };
+  container.querySelectorAll('.drop-zone').forEach(zone => {
+    zone.onclick = event => { if (event.target === zone) place(zone, selected); };
+    zone.onkeydown = event => { if (event.target === zone && ['Enter',' '].includes(event.key)) { event.preventDefault(); place(zone, selected); } };
+    zone.ondragover = event => { event.preventDefault(); zone.classList.add('over'); };
+    zone.ondragleave = () => zone.classList.remove('over');
+    zone.ondrop = event => { event.preventDefault(); zone.classList.remove('over'); place(zone, state.dragItem); };
   });
 }
 
 function initOrderDrag(list) {
   list.querySelectorAll(".order-item").forEach((item) => {
+    item.onkeydown = event => {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveOrderStep(item, event.key === 'ArrowUp' ? -1 : 1);
+        item.focus();
+      }
+    };
     item.ondragstart = () => {
       state.dragItem = item;
       item.classList.add("dragging");
@@ -1210,6 +1353,9 @@ function initOrderDrag(list) {
       state.dragItem = null;
       refreshOrderNumbers();
       scheduleEvidenceRefresh();
+      const id = list.id.slice('order_'.length);
+      const activity = findActivity(id);
+      if (activity) saveDraft(activity.moduleId, id, {type:'drag_order', order:orderAnswer(id)});
     };
   });
   list.ondragover = (event) => {
@@ -1284,6 +1430,9 @@ function evaluateMapping(a) {
 
 function mappingAnswer(activityId) {
   const answer = {};
+  document.querySelectorAll(`#brick_${css(activityId)} [data-mapping-target]`).forEach(input => {
+    answer[input.dataset.mappingTarget] = input.value;
+  });
   document.querySelectorAll(`#brick_${css(activityId)} .mapping-zone`).forEach((zone) => {
     const item = zone.querySelector(".drag-item");
     answer[zone.dataset.target] = item?.dataset.value || "";
@@ -1308,6 +1457,18 @@ function orderAnswer(activityId) {
   return [...document.querySelectorAll(`#order_${css(activityId)} .drag-item`)].map((item) => item.dataset.value);
 }
 
+function moveOrderStep(button, direction) {
+  const item = button.closest('.order-item');
+  const list = item.parentElement;
+  const sibling = direction < 0 ? item.previousElementSibling : item.nextElementSibling;
+  if (!sibling) return;
+  if (direction < 0) list.insertBefore(item, sibling);
+  else list.insertBefore(sibling, item);
+  refreshOrderNumbers();
+  const id = list.id.slice('order_'.length);
+  const activity = findActivity(id);
+  if (activity) saveDraft(activity.moduleId, id, {type:'drag_order', order:orderAnswer(id)});
+}
 function evaluateDecisionTable(a) {
   const rows = a.config.rows || [];
   const answer = decisionTableAnswer(a.activityId, rows);
@@ -1885,7 +2046,7 @@ function stopCountdown() {
 }
 
 async function submitAssessment(moduleId, autoExpired) {
-  const tasks = activities(moduleId).filter((a) => a.activityType !== "assessment_block");
+  const tasks = activities(moduleId).filter((a) => !["assessment_block", "html_content", "video"].includes(a.activityType));
   const results = [];
   let error = "";
   const placement = isPlacementModule(moduleId);
@@ -2020,7 +2181,7 @@ async function submitAssessment(moduleId, autoExpired) {
         return;
       }
       results.push({ activityId: a.activityId, answer: { text }, validationStatus: text.length >= min ? "pending_review" : "not_checked", score: 0 });
-    } else if (a.activityType === "experience_evidence") {
+    } else if (["experience_evidence", "worksheet"].includes(a.activityType)) {
       const gate = evidenceGateStatus(a);
       if (!gate.unlocked) {
         results.push({
@@ -2046,14 +2207,14 @@ async function submitAssessment(moduleId, autoExpired) {
         if (text.length < min) missing.push(prompt.label || prompt.question || `Evidence ${i + 1}`);
       });
       if (missing.length && !autoExpired) {
-        error = `Evidence fields need at least ${min} characters: ${missing.slice(0, 2).join(", ")}${missing.length > 2 ? "..." : ""}`;
+        error = `Заполните ответы (минимум ${min} символов): ${missing.slice(0, 2).join(", ")}${missing.length > 2 ? "..." : ""}`;
         return;
       }
       results.push({
         activityId: a.activityId,
         answer: { responses },
         validationStatus: missing.length ? "not_checked" : "pending_review",
-        validationOutput: "Experience evidence requires reviewer confirmation.",
+        validationOutput: a.activityType === "worksheet" ? "Рабочая тетрадь ожидает проверки ментором." : "Experience evidence requires reviewer confirmation.",
         score: 0
       });
     } else if (a.activityType === "rest_contract") {
@@ -2236,7 +2397,7 @@ function renderAttemptAnswer(task) {
   if (task.taskType === "open_answer") {
     return `<div class="answer-text">${esc(answer.text || "")}</div>`;
   }
-  if (task.taskType === "experience_evidence") {
+  if (["experience_evidence", "worksheet"].includes(task.taskType)) {
     if (answer.locked) {
       return `<div class="result warn">Seniority evidence was not unlocked. Automatic score: ${esc(answer.gate?.percent ?? 0)}%, required: ${esc(answer.gate?.requiredPercent ?? 0)}%.</div>`;
     }
@@ -2678,7 +2839,7 @@ function openActivityEditor(moduleId, activityId = "", insertBefore = "", insert
   const module = state.data.modules.find((m) => m.moduleId === moduleId);
   const activity = activityId ? findActivity(activityId) : null;
   const types = module.moduleType === "assessment"
-    ? [["quiz", "Quiz"], ["drag_mapping", "Drag mapping"], ["drag_order", "Drag order"], ["decision_table", "Decision table"], ["impact_analysis", "Impact analysis"], ["rest_contract", "REST contract"], ["sql_task", "SQL task"], ["python_task", "Python task"], ["open_answer", "Open answer"], ["experience_evidence", "Experience evidence"]]
+    ? [["html_content", "Material"], ["video", "Video player"], ["worksheet", "Worksheet"], ["quiz", "Quiz"], ["drag_mapping", "Drag mapping"], ["drag_order", "Drag order"], ["decision_table", "Decision table"], ["impact_analysis", "Impact analysis"], ["rest_contract", "REST contract"], ["sql_task", "SQL task"], ["python_task", "Python task"], ["open_answer", "Open answer"], ["experience_evidence", "Experience evidence"]]
     : [["html_content", "HTML content"], ["text", "Text"], ["image", "Image"], ["video", "Video player"], ["practice_quiz", "Practice quiz"], ["decision_table", "Decision table"], ["impact_analysis", "Impact analysis"], ["rest_contract", "REST contract"], ["drag_mapping", "Drag mapping"], ["drag_order", "Drag order"], ["sql_practice", "SQL practice"], ["python_practice", "Python practice"]];
   modal(`
     ${modalHeader(activityId ? "Edit activity" : "Add activity")}
@@ -2724,7 +2885,7 @@ function renderActivityFields(activity, module = {}) {
     box.innerHTML = textArea("ae_intro", "Intro", cfg.intro || "") + `<div id="quizQuestions"></div><button class="btn ghost small" onclick="addQuestion()">+ Add question</button>`;
     (cfg.questions || [{ question: "", options: ["", ""], correctAnswers: [0] }]).forEach((q) => addQuestion(q));
   } else if (type === "drag_mapping") {
-    box.innerHTML = `<div class="grid-2">${textField("ae_left_title", "Left title", cfg.leftTitle || "Targets")}${textField("ae_right_title", "Right title", cfg.rightTitle || "Values")}</div><div id="mappingPairs"></div><button class="btn ghost small" onclick="addPair()">+ Add pair</button>`;
+    box.innerHTML = textArea("ae_mapping_scenario", "Scenario", cfg.scenario || "") + selectField("ae_mapping_mode", "Interaction", [{value:"drag",label:"Drag and drop"},{value:"select",label:"Select matching values"}], cfg.inputMode || "drag") + `<div class="grid-2">${textField("ae_left_title", "Left title", cfg.leftTitle || "Targets")}${textField("ae_right_title", "Right title", cfg.rightTitle || "Values")}</div><div id="mappingPairs"></div><button class="btn ghost small" onclick="addPair()">+ Add pair</button>`;
     const mapping = cfg.correctMapping || {};
     const left = cfg.leftItems || Object.keys(mapping);
     (left.length ? left : [""]).forEach((item) => addPair(item, mapping[item] || ""));
@@ -2746,6 +2907,7 @@ function renderActivityFields(activity, module = {}) {
     box.innerHTML = selectField("ae_schema", "Schema", schemas, cfg.databaseSchemaId || schemas[0]?.value || "") +
       textArea("ae_instructions", "Instructions", cfg.instructions || activity?.content || "") +
       textArea("ae_query", "Starter SQL", cfg.defaultQuery || "", true) +
+      textArea("ae_expected_query", "Пример правильного SQL (только для ментора)", cfg.validation?.expectedQuery || validation.expectedQuery || "", true) +
       textField("ae_columns", "Expected columns, comma-separated", (cfg.validation?.expectedColumns || validation.expectedColumns || []).join(", ")) +
       textArea("ae_rows", "Expected rows, JSON array", JSON.stringify(cfg.validation?.expectedRows || validation.expectedRows || [], null, 2), true);
   } else if (type === "python_practice" || type === "python_task") {
@@ -2756,12 +2918,12 @@ function renderActivityFields(activity, module = {}) {
     box.innerHTML = textArea("ae_description", "Task description", activity?.content || "") +
       numberField("ae_min", "Minimum length", cfg.minLength || validation.minLength || 30) +
       textField("ae_placeholder", "Placeholder", cfg.placeholder || "Write your answer...");
-  } else if (type === "experience_evidence") {
+  } else if (["experience_evidence", "worksheet"].includes(type)) {
     const prompts = cfg.prompts || defaultEvidencePrompts();
     box.innerHTML = textArea("ae_evidence_instructions", "Instructions", activity?.content || cfg.instructions || "Provide concrete examples that help the reviewer confirm the recommended BA level.") +
       numberField("ae_evidence_min", "Minimum length per field", cfg.minLength || 60) +
-      `<label class="check-line"><input id="ae_evidence_unlock_enabled" type="checkbox" ${cfg.unlock ? "checked" : ""}> Unlock only after high automatic score</label>` +
-      numberField("ae_evidence_unlock_percent", "Unlock threshold, %", cfg.unlock?.minAutoScorePercent || 80) +
+      (type === "worksheet" ? "" : `<label class="check-line"><input id="ae_evidence_unlock_enabled" type="checkbox" ${cfg.unlock ? "checked" : ""}> Unlock only after high automatic score</label>` +
+      numberField("ae_evidence_unlock_percent", "Unlock threshold, %", cfg.unlock?.minAutoScorePercent || 80)) +
       `<div id="evidencePrompts"></div><button class="btn ghost small" onclick="addEvidencePrompt()">+ Add evidence prompt</button>`;
     prompts.forEach((prompt) => addEvidencePrompt(prompt));
   } else if (type === "rest_contract") {
@@ -2785,7 +2947,7 @@ function renderActivityFields(activity, module = {}) {
       textArea("ae_rest_response_fields", "Correct response fields, one per line", (v.responseFields || ["clientCode", "accounts[].accountNumber", "accounts[].currency"]).join("\n"), true);
   }
 
-  if (isAssessment && ["quiz", "drag_mapping", "drag_order", "decision_table", "impact_analysis", "sql_task", "python_task", "open_answer", "rest_contract", "experience_evidence"].includes(type)) {
+  if (isAssessment && ["worksheet", "quiz", "drag_mapping", "drag_order", "decision_table", "impact_analysis", "sql_task", "python_task", "open_answer", "rest_contract", "experience_evidence"].includes(type)) {
     box.innerHTML += `<div class="grid-2">${numberField("ae_points", "Points", activity?.points || 0)}<label class="check-line"><input id="ae_manual" type="checkbox" ${truthy(activity?.manualReviewRequired) ? "checked" : ""}> Manual review required</label></div>`;
   }
 }
@@ -2950,7 +3112,7 @@ async function saveActivity(moduleId, activityId = "", insertBefore = "", insert
         })
       };
     } else if (type === "drag_mapping") {
-      cfg = { leftTitle: val("ae_left_title"), rightTitle: val("ae_right_title"), leftItems: [], rightItems: [], correctMapping: {} };
+      cfg = { scenario: val("ae_mapping_scenario"), inputMode: val("ae_mapping_mode") || "drag", leftTitle: val("ae_left_title"), rightTitle: val("ae_right_title"), leftItems: [], rightItems: [], correctMapping: {} };
       document.querySelectorAll(".pair-row").forEach((row) => {
         const left = row.querySelector(".pair-left").value;
         const right = row.querySelector(".pair-right").value;
@@ -2983,7 +3145,8 @@ async function saveActivity(moduleId, activityId = "", insertBefore = "", insert
     } else if (type === "sql_practice" || type === "sql_task") {
       validation = {
         expectedColumns: val("ae_columns").split(",").map((x) => x.trim()).filter(Boolean),
-        expectedRows: parseJson(val("ae_rows"), [])
+        expectedRows: parseJson(val("ae_rows"), []),
+        expectedQuery: val("ae_expected_query")
       };
       cfg = { databaseSchemaId: val("ae_schema"), instructions: val("ae_instructions"), defaultQuery: val("ae_query"), validation };
     } else if (type === "python_practice" || type === "python_task") {
@@ -2993,10 +3156,12 @@ async function saveActivity(moduleId, activityId = "", insertBefore = "", insert
       payload.content = val("ae_description");
       cfg = { minLength: Number(val("ae_min") || 0), placeholder: val("ae_placeholder") };
       validation = { validationMode: "manual", minLength: cfg.minLength };
-    } else if (type === "experience_evidence") {
+    } else if (["experience_evidence", "worksheet"].includes(type)) {
+      payload.manualReviewRequired = true;
       payload.content = val("ae_evidence_instructions");
       cfg = {
         instructions: val("ae_evidence_instructions"),
+        allowPaste: type === "worksheet",
         minLength: Number(val("ae_evidence_min") || 60),
         unlock: checked("ae_evidence_unlock_enabled") ? { minAutoScorePercent: Number(val("ae_evidence_unlock_percent") || 80) } : null,
         prompts: [...document.querySelectorAll(".evidence-prompt-row")].map((row, i) => ({
